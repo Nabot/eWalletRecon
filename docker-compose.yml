@@ -1,0 +1,40 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ewallet-recon-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ewallet
+      POSTGRES_PASSWORD: ewallet
+      POSTGRES_DB: ewallet_recon
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ewallet -d ewallet_recon"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: ewallet-recon-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://ewallet:ewallet@postgres:5432/ewallet_recon?schema=public
+      JWT_SECRET: change-me-in-production-use-long-secret
+      PORT: 3001
+      NODE_ENV: production
+      MATCH_TIME_WINDOW_MINUTES: 15
+      CORS_ORIGIN: http://localhost:5173
+    ports:
+      - "3001:3001"
+
+volumes:
+  postgres_data:

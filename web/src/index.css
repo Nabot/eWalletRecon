@@ -1,0 +1,180 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Force Facebook light palette — overrides stale Tailwind caches */
+:root {
+  --fb-page: #f0f2f5;
+  --fb-card: #ffffff;
+  --fb-hover: #e4e6eb;
+  --fb-border: #ced0d4;
+  --fb-text: #1c1e21;
+  --fb-muted: #4b4f56; /* stronger secondary for WCAG-ish contrast on #f0f2f5 */
+  --fb-muted-soft: #65676b;
+  --fb-blue: #1877f2;
+  --fb-blue-hover: #166fe5;
+  --fb-blue-soft: #e7f3ff;
+  --fb-red: #f02849;
+  --fb-amber: #f7b928;
+}
+
+html,
+body,
+#root {
+  min-height: 100vh;
+  background: var(--fb-page) !important;
+  color: var(--fb-text) !important;
+}
+
+body {
+  font-family: "IBM Plex Sans", ui-sans-serif, sans-serif;
+  font-feature-settings: "ss01" on, "kern" on;
+}
+
+h1,
+h2,
+h3 {
+  font-family: "IBM Plex Sans", ui-sans-serif, sans-serif;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--fb-text) !important;
+}
+
+input,
+select,
+textarea {
+  color: var(--fb-text) !important;
+  background-color: var(--fb-page) !important;
+}
+
+/* Remap legacy token utilities → Facebook light */
+.bg-ink-950 {
+  background-color: var(--fb-page) !important;
+}
+.bg-ink-900,
+.bg-ink-900\/40,
+.bg-ink-900\/60,
+.bg-ink-900\/80 {
+  background-color: var(--fb-card) !important;
+}
+.bg-ink-800,
+.hover\:bg-ink-800:hover,
+.hover\:bg-ink-800\/40:hover,
+.hover\:bg-ink-800\/50:hover {
+  background-color: var(--fb-hover) !important;
+}
+.bg-ink-700 {
+  background-color: var(--fb-border) !important;
+}
+.hover\:bg-ink-950:hover {
+  background-color: var(--fb-page) !important;
+}
+
+.text-sand-50,
+.text-sand-100 {
+  color: var(--fb-text) !important;
+}
+.text-sand-200,
+.text-sand-200\/65,
+.text-sand-200\/70,
+.text-sand-200\/75,
+.text-sand-200\/80 {
+  color: var(--fb-muted) !important;
+}
+.text-sand-200\/40,
+.text-sand-200\/45,
+.text-sand-200\/50,
+.text-sand-200\/55,
+.text-sand-200\/60 {
+  color: var(--fb-muted-soft) !important;
+}
+.hover\:text-sand-50:hover {
+  color: var(--fb-text) !important;
+}
+
+.border-ink-700,
+.border-ink-800,
+.border-sand-200\/5,
+.border-sand-200\/10,
+.border-sand-200\/15,
+.border-sand-200\/20 {
+  border-color: var(--fb-border) !important;
+}
+.divide-ink-800 > :not([hidden]) ~ :not([hidden]),
+.divide-sand-200\/5 > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--fb-hover) !important;
+}
+
+.bg-veld-600,
+.bg-veld-500,
+.bg-veld-600\/80,
+.bg-veld-600\/90 {
+  background-color: var(--fb-blue) !important;
+  color: #ffffff !important;
+}
+.hover\:bg-veld-500:hover,
+.hover\:bg-veld-600:hover {
+  background-color: var(--fb-blue-hover) !important;
+  color: #ffffff !important;
+}
+.bg-veld-700,
+.bg-veld-600\/20,
+.bg-veld-600\/30 {
+  background-color: var(--fb-blue-soft) !important;
+}
+.text-veld-400,
+.text-veld-500,
+.text-veld-600 {
+  color: var(--fb-blue) !important;
+}
+.border-veld-500,
+.border-veld-500\/40,
+.border-veld-600 {
+  border-color: var(--fb-blue) !important;
+}
+.focus\:border-veld-500:focus {
+  border-color: var(--fb-blue) !important;
+}
+.focus\:ring-veld-700:focus {
+  --tw-ring-color: var(--fb-blue-soft) !important;
+}
+
+.text-clay-400,
+.text-clay-500 {
+  color: var(--fb-red) !important;
+}
+.bg-clay-500,
+.bg-clay-500\/90,
+.bg-clay-600 {
+  background-color: var(--fb-red) !important;
+  color: #ffffff !important;
+}
+.hover\:bg-clay-500:hover {
+  background-color: #e41e3f !important;
+}
+
+.text-amber-warn {
+  color: #b07800 !important;
+}
+
+.status-matched {
+  background-color: var(--fb-blue-soft) !important;
+  color: var(--fb-blue) !important;
+  box-shadow: inset 0 0 0 1px rgb(24 119 242 / 0.3);
+}
+.status-pending {
+  background-color: #fff4d6 !important;
+  color: #b07800 !important;
+  box-shadow: inset 0 0 0 1px rgb(247 185 40 / 0.4);
+}
+
+.shadow-fb {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+.shadow-fb-md {
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+}
+
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}

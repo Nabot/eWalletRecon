@@ -1,0 +1,176 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum WalletProvider {
+  PAYPULSE
+  EASYWALLET
+  PAY2CELL
+  EWALLET
+}
+
+enum MatchStatus {
+  PENDING
+  MATCHED
+  UNMATCHED
+  MANUAL
+}
+
+enum TopupStatus {
+  AWAITING
+  FULFILLED
+  EXPIRED
+}
+
+enum StaffRole {
+  ADMIN
+  OPERATOR
+}
+
+enum ActorType {
+  STAFF
+  DEVICE
+  SYSTEM
+}
+
+enum DepositSource {
+  SMS
+  WEBHOOK
+  MANUAL
+}
+
+model WalletNumber {
+  id       String         @id @default(cuid())
+  msisdn   String         @unique
+  provider WalletProvider
+  label    String
+  active   Boolean        @default(true)
+  deviceId String?
+
+  device        CaptureDevice?
+  depositEvents DepositEvent[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model CaptureDevice {
+  id             String    @id @default(cuid())
+  apiKeyHash     String
+  name           String
+  walletNumberId String    @unique
+  lastSeenAt     DateTime?
+
+  walletNumber WalletNumber @relation(fields: [walletNumberId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model DepositEvent {
+  id                    String         @id @default(cuid())
+  walletNumberId        String
+  provider              WalletProvider
+  amount                Decimal        @db.Decimal(14, 2)
+  currency              String         @default("NAD")
+  senderMsisdn          String?
+  senderName            String?
+  reference             String?
+  rawMessage            String
+  receivedAt            DateTime
+  matchStatus           MatchStatus    @default(PENDING)
+  matchedTopupRequestId String?
+  source                DepositSource  @default(SMS)
+  externalId            String?
+  /// Client-supplied idempotency key from capture device (SMS hash)
+  captureIdempotencyKey String?        @unique
+  /// Manual credit: betting account id entered by staff
+  creditBetAccountId    String?
+  /// Manual credit: free-text note
+  creditNote            String?
+  creditedAt            DateTime?
+  creditedByStaffId     String?
+
+  walletNumber        WalletNumber   @relation(fields: [walletNumberId], references: [id])
+  matchedTopupRequest TopupRequest?  @relation(fields: [matchedTopupRequestId], references: [id])
+  creditLedger        CreditLedger?
+
+  createdAt DateTime @default(now())
+
+  @@index([matchStatus])
+  @@index([receivedAt])
+  @@index([walletNumberId, receivedAt])
+  @@index([creditBetAccountId])
+}
+
+model TopupRequest {
+  id             String      @id @default(cuid())
+  userId         String
+  betAccountId   String
+  expectedAmount Decimal?    @db.Decimal(14, 2)
+  refCode        String      @unique
+  status         TopupStatus @default(AWAITING)
+  expiresAt      DateTime
+  createdAt      DateTime    @default(now())
+
+  user          User           @relation(fields: [userId], references: [id])
+  depositEvents DepositEvent[]
+
+  @@index([status, expiresAt])
+  @@index([status, expectedAmount])
+}
+
+model User {
+  id               String @id @default(cuid())
+  betAccountId     String @unique
+  registeredMsisdn String
+  name             String
+
+  topupRequests TopupRequest[]
+  creditLedger  CreditLedger[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([registeredMsisdn])
+}
+
+/// Append-only, immutable credit records. Never update or delete.
+model CreditLedger {
+  id             String   @id @default(cuid())
+  userId         String
+  depositEventId String   @unique
+  amount         Decimal  @db.Decimal(14, 2)
+  createdAt      DateTime @default(now())
+
+  user         User         @relation(fields: [userId], references: [id])
+  depositEvent DepositEvent @relation(fields: [depositEventId], references: [id])
+}
+
+model AuditLog {
+  id         String    @id @default(cuid())
+  actorType  ActorType
+  actorId    String
+  action     String
+  entityType String
+  entityId   String
+  metadata   Json?
+  createdAt  DateTime  @default(now())
+
+  @@index([createdAt])
+  @@index([entityType, entityId])
+}
+
+model StaffUser {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  role         StaffRole @default(OPERATOR)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}

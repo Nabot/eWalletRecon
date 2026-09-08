@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Soft paper disc -->
+    <path
+        android:fillColor="#F7F4EF"
+        android:pathData="M54,22c17.7,0 32,14.3 32,32s-14.3,32 -32,32 -32,-14.3 -32,-32 14.3,-32 32,-32z" />
+    <!-- Signal bars -->
+    <path
+        android:fillColor="#1F5C37"
+        android:pathData="M40,62h6v10h-6zM51,52h6v20h-6zM62,42h6v30h-6z" />
+    <!-- Small check mark -->
+    <path
+        android:fillColor="#1F5C37"
+        android:pathData="M38,44l4,4 8,-10 3,2 -11,14 -7,-7z" />
+</vector>
