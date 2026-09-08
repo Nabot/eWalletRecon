@@ -63,18 +63,20 @@ Seeded login: `admin@example.com` / `admin123` — **change immediately**.
 ## 3. Vercel (web)
 
 1. [vercel.com/new](https://vercel.com/new) → import **Nabot/eWalletRecon**.
-2. **Root Directory must be empty / `.` (repository root)** — do **not** set it to `web`.
-   Otherwise npm workspaces are invisible and you get `No workspaces found: --workspace=shared`.
-3. Framework: Other (or Vite). `vercel.json` sets install/build/output.
-4. Environment variables (Production):
+2. **Root Directory = `web`** (Project → Settings → General).
+   - This makes Vercel treat the app as a **Vite static site**, not a Node server.
+   - If Root Directory is empty/`.`, Vercel may look for `index.js` in `web/dist` and fail after a successful Vite build.
+3. Framework Preset: **Vite** (should auto-detect from `web/vite.config.ts`).
+4. `web/vercel.json` sets install/build (uses monorepo workspaces via `cd ..`) and SPA rewrites.
+5. Environment variables (Production):
 
    | Key | Value |
    |-----|--------|
    | `VITE_API_URL` | `https://YOUR-SERVICE.onrender.com` |
    | `VITE_WS_URL` | `wss://YOUR-SERVICE.onrender.com/ws` |
 
-5. Deploy.
-6. Copy the Vercel URL → set Render `CORS_ORIGIN` to that exact origin (no trailing slash) → **Manual Deploy** on Render if needed.
+6. Deploy.
+7. Copy the Vercel URL → set Render `CORS_ORIGIN` to that exact origin (no trailing slash) → **Manual Deploy** on Render if needed.
 
 ## 4. Android
 

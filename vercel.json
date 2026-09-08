@@ -1,5 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
   "installCommand": "npm install --workspace=@ewallet/shared --workspace=@ewallet/web",
   "buildCommand": "npm run build --workspace=@ewallet/shared && npm run build --workspace=@ewallet/web",
   "outputDirectory": "web/dist",
