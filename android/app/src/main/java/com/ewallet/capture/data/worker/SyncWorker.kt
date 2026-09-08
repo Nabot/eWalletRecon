@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.first
 class SyncWorker(appContext: Context, params: WorkerParameters) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result {
         val prefs = Prefs(applicationContext)
+        prefs.ensureMigrated()
         val apiKey = prefs.apiKey.first()
         val base = prefs.apiBase.first()
         if (apiKey.isBlank()) {

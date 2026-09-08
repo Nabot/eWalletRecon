@@ -13,9 +13,38 @@ android {
         applicationId = "com.ewallet.capture"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "1.2.0"
+        versionCode = 4
+        versionName = "1.3.0"
         buildConfigField("String", "DEFAULT_API_BASE", "\"http://10.0.2.2:3001\"")
+        buildConfigField("boolean", "ALLOW_CLEARTEXT", "true")
+        buildConfigField("boolean", "ALLOW_EDIT_API_BASE", "true")
+        manifestPlaceholders["usesCleartextTraffic"] = "true"
+    }
+
+    flavorDimensions += "env"
+    productFlavors {
+        create("dev") {
+            dimension = "env"
+            applicationIdSuffix = ".dev"
+            versionNameSuffix = "-dev"
+            // Override for physical devices: -Pewallet.apiBase=http://192.168.x.x:3001
+            val devBase = (project.findProperty("ewallet.apiBase") as String?)
+                ?: "http://10.0.2.2:3001"
+            buildConfigField("String", "DEFAULT_API_BASE", "\"$devBase\"")
+            buildConfigField("boolean", "ALLOW_CLEARTEXT", "true")
+            buildConfigField("boolean", "ALLOW_EDIT_API_BASE", "true")
+            manifestPlaceholders["usesCleartextTraffic"] = "true"
+        }
+        create("prod") {
+            dimension = "env"
+            // Override at build time: -Pewallet.apiBase=https://api.example.com
+            val prodBase = (project.findProperty("ewallet.apiBase") as String?)
+                ?: "https://api.example.com"
+            buildConfigField("String", "DEFAULT_API_BASE", "\"$prodBase\"")
+            buildConfigField("boolean", "ALLOW_CLEARTEXT", "false")
+            buildConfigField("boolean", "ALLOW_EDIT_API_BASE", "false")
+            manifestPlaceholders["usesCleartextTraffic"] = "false"
+        }
     }
 
     buildTypes {
@@ -61,9 +90,12 @@ dependencies {
 
     implementation("androidx.work:work-runtime-ktx:2.10.0")
     implementation("androidx.datastore:datastore-preferences:1.1.1")
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+
+    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

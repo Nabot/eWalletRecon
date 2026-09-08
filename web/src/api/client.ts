@@ -61,6 +61,19 @@ export const api = {
 
   devices: (token: string) => request<CaptureDeviceDto[]>("/api/devices", token),
 
+  createDevice: (token: string, name: string, walletNumberId: string) =>
+    request<{
+      id: string;
+      name: string;
+      walletNumberId: string;
+      apiKey: string;
+      provision: { v: number; apiBase: string; apiKey: string };
+      provisionQrPayload: string;
+    }>("/api/devices", token, {
+      method: "POST",
+      body: JSON.stringify({ name, walletNumberId }),
+    }),
+
   wallets: (token: string) =>
     request<
       {
@@ -68,6 +81,7 @@ export const api = {
         msisdn: string;
         label: string;
         provider: WalletProvider;
+        device?: { id: string; name: string; lastSeenAt: string | null } | null;
       }[]
     >("/api/wallets", token),
 

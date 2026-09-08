@@ -5,4 +5,8 @@
         This app reads incoming e-wallet SMS on this phone so deposits can be matched to betting accounts.
         Messages are sent only to your company reconciliation server. SMS is not shared with third parties.
     </string>
+    <string name="restriction_api_base_title">API base URL</string>
+    <string name="restriction_api_base_desc">Backend base URL for this capture phone (https://…)</string>
+    <string name="restriction_api_key_title">Device API key</string>
+    <string name="restriction_api_key_desc">One-time device key from admin console (never reuse)</string>
 </resources>

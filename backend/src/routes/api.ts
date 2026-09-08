@@ -384,7 +384,22 @@ apiRouter.post("/devices", requireRole("ADMIN"), async (req, res) => {
     entityId: device.id,
   });
 
-  res.status(201).json({ ...device, apiKey }); // apiKey shown once
+  const provision = {
+    v: 1 as const,
+    apiBase: config.publicApiBaseUrl,
+    apiKey,
+  };
+
+  // apiKey + provision shown once — never stored in plaintext
+  res.status(201).json({
+    id: device.id,
+    name: device.name,
+    walletNumberId: device.walletNumberId,
+    createdAt: device.createdAt.toISOString(),
+    apiKey,
+    provision,
+    provisionQrPayload: JSON.stringify(provision),
+  });
 });
 
 // --- Reporting ---

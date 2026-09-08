@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<restrictions xmlns:android="http://schemas.android.com/apk/res/android">
+    <restriction
+        android:key="api_base"
+        android:title="@string/restriction_api_base_title"
+        android:restrictionType="string"
+        android:description="@string/restriction_api_base_desc" />
+    <restriction
+        android:key="api_key"
+        android:title="@string/restriction_api_key_title"
+        android:restrictionType="string"
+        android:description="@string/restriction_api_key_desc" />
+</restrictions>

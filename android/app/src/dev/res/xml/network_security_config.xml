@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Fallback; flavored src/dev and src/prod override this. -->
 <network-security-config>
+    <!-- Dev / LAN: cleartext allowed. Prod flavor uses src/prod override. -->
     <base-config cleartextTrafficPermitted="true" />
 </network-security-config>

@@ -16,6 +16,11 @@ export const config = {
   jwtSecret: required("JWT_SECRET", "dev-secret-change-me"),
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? "8h",
   corsOrigin: process.env.CORS_ORIGIN ?? "http://localhost:5173",
+  /** Public base URL embedded in device provision QR (phones must reach this). */
+  publicApiBaseUrl: (process.env.PUBLIC_API_BASE_URL ?? `http://localhost:${process.env.PORT ?? 3001}`).replace(
+    /\/$/,
+    ""
+  ),
   matchTimeWindowMinutes: Number(process.env.MATCH_TIME_WINDOW_MINUTES ?? 15),
   deviceOfflineMinutes: Number(process.env.DEVICE_OFFLINE_MINUTES ?? 5),
   nodeEnv: process.env.NODE_ENV ?? "development",

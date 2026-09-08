@@ -30,6 +30,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -71,7 +72,11 @@ import com.ewallet.capture.data.worker.SyncWorker
 import com.ewallet.capture.ui.theme.CaptureColors
 import com.ewallet.capture.ui.theme.CaptureTheme
 import com.ewallet.capture.util.Prefs
+import com.ewallet.capture.util.ProvisionPayload
 import com.ewallet.capture.util.WorkScheduler
+import com.google.zxing.client.android.Intents
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -79,6 +84,9 @@ import java.text.DateFormat
 import java.util.Date
 
 class MainActivity : ComponentActivity() {
+    private lateinit var prefs: Prefs
+    private var pendingProvisionCallback: ((ProvisionPayload) -> Unit)? = null
+
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { grants ->
@@ -93,25 +101,54 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private val qrLauncher = registerForActivityResult(ScanContract()) { result ->
+        val raw = result.contents ?: return@registerForActivityResult
+        val payload = ProvisionPayload.parse(raw)
+        if (payload != null) {
+            pendingProvisionCallback?.invoke(payload)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        prefs = Prefs(this)
         enableEdgeToEdge()
         requestSmsPermissionsIfNeeded()
+
+        lifecycleScope.launch {
+            prefs.ensureMigrated()
+            handleProvisionIntent(intent)
+        }
 
         setContent {
             CaptureTheme {
                 StatusScreen(
                     onSave = { base, key, onResult ->
                         lifecycleScope.launch {
-                            val prefs = Prefs(this@MainActivity)
                             prefs.saveConnection(base, key)
                             val result = withContext(Dispatchers.IO) {
-                                probeConnection(base.trimEnd('/'), key.trim())
+                                probeAndBind(prefs, base.trimEnd('/'), key.trim())
                             }
                             if (result.ok) {
+                                prefs.lockConnection()
                                 WorkScheduler.enqueueHeartbeatAndSync(this@MainActivity)
                             }
                             onResult(result)
+                        }
+                    },
+                    onScanQr = { onPayload ->
+                        pendingProvisionCallback = onPayload
+                        val options = ScanOptions()
+                            .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+                            .setPrompt("Scan device provision QR")
+                            .setBeepEnabled(false)
+                            .setOrientationLocked(true)
+                        options.addExtra(Intents.Scan.SCAN_TYPE, Intents.Scan.MIXED_SCAN)
+                        qrLauncher.launch(options)
+                    },
+                    onReset = {
+                        lifecycleScope.launch {
+                            prefs.resetConnection()
                         }
                     },
                     onSyncNow = {
@@ -131,6 +168,32 @@ class MainActivity : ComponentActivity() {
                     }
                 )
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        lifecycleScope.launch { handleProvisionIntent(intent) }
+    }
+
+    private suspend fun handleProvisionIntent(intent: Intent?) {
+        if (prefs.peekLocked()) return
+        val data = intent?.data ?: return
+        if (data.scheme != "ewallet-capture" || data.host != "provision") return
+        val raw = data.getQueryParameter("payload")
+            ?: data.getQueryParameter("p")
+            ?: return
+        val decoded = runCatching {
+            String(android.util.Base64.decode(raw, android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP))
+        }.getOrElse { raw }
+        val payload = ProvisionPayload.parse(decoded) ?: return
+        val base = payload.apiBase.ifBlank { BuildConfig.DEFAULT_API_BASE }
+        prefs.saveConnection(base, payload.apiKey)
+        val result = withContext(Dispatchers.IO) { probeAndBind(prefs, base, payload.apiKey) }
+        if (result.ok) {
+            prefs.lockConnection()
+            WorkScheduler.enqueueHeartbeatAndSync(this)
         }
     }
 
@@ -168,10 +231,20 @@ class MainActivity : ComponentActivity() {
                     return ProbeResult(false, "Config failed HTTP $code")
                 }
                 val name = cfg.optString("deviceName").ifBlank { "device" }
-                ProbeResult(true, "Connected as $name")
+                ProbeResult(true, "Connected as $name · connection locked")
             } catch (e: Exception) {
                 ProbeResult(false, e.message ?: "Connection failed")
             }
+        }
+
+        suspend fun probeAndBind(prefs: Prefs, base: String, key: String): ProbeResult {
+            val result = probeConnection(base, key)
+            if (result.ok) {
+                applyProbeMeta(prefs, base, key)
+            } else {
+                prefs.setLastError(result.message)
+            }
+            return result
         }
     }
 }
@@ -182,6 +255,8 @@ private enum class HealthState { Ready, Attention, Setup }
 @Composable
 fun StatusScreen(
     onSave: (String, String, (MainActivity.Companion.ProbeResult) -> Unit) -> Unit,
+    onScanQr: ((ProvisionPayload) -> Unit) -> Unit,
+    onReset: () -> Unit,
     onSyncNow: () -> Unit,
     onRequestPermissions: () -> Unit,
     onOpenAppSettings: () -> Unit,
@@ -192,8 +267,11 @@ fun StatusScreen(
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
-    val apiBase by prefs.apiBase.collectAsState(initial = "http://10.0.2.2:3001")
+    LaunchedEffect(Unit) { prefs.ensureMigrated() }
+
+    val apiBase by prefs.apiBase.collectAsState(initial = BuildConfig.DEFAULT_API_BASE)
     val apiKey by prefs.apiKey.collectAsState(initial = "")
+    val locked by prefs.connectionLocked.collectAsState(initial = false)
     val deviceName by prefs.deviceName.collectAsState(initial = "")
     val walletLabel by prefs.walletLabel.collectAsState(initial = "")
     val walletMsisdn by prefs.walletMsisdn.collectAsState(initial = "")
@@ -211,7 +289,8 @@ fun StatusScreen(
     var showKey by remember { mutableStateOf(false) }
     var permissionTick by remember { mutableIntStateOf(0) }
     var settingsOpen by remember { mutableStateOf(false) }
-    var editingConnection by remember { mutableStateOf(false) }
+    var showResetDialog by remember { mutableStateOf(false) }
+    var resetConfirm by remember { mutableStateOf("") }
 
     val smsGranted = remember(permissionTick) {
         ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) ==
@@ -220,21 +299,20 @@ fun StatusScreen(
             PackageManager.PERMISSION_GRANTED
     }
 
-    val configured = apiKey.isNotBlank() && deviceName.isNotBlank()
+    val configured = locked && apiKey.isNotBlank() && deviceName.isNotBlank()
     val heartbeatFresh = lastHeartbeatMs > 0L &&
         System.currentTimeMillis() - lastHeartbeatMs < offlineAfter * 60_000L
     val linkOk = configured && heartbeatFresh && lastError.isBlank()
 
     val health = when {
-        !smsGranted || apiKey.isBlank() || deviceName.isBlank() -> HealthState.Setup
+        !smsGranted || apiKey.isBlank() || !locked -> HealthState.Setup
         !linkOk || deadCount > 0 || lastError.isNotBlank() -> HealthState.Attention
         else -> HealthState.Ready
     }
 
-    LaunchedEffect(configured) {
-        if (!configured) {
+    LaunchedEffect(locked) {
+        if (!locked) {
             settingsOpen = true
-            editingConnection = true
         }
     }
 
@@ -249,15 +327,66 @@ fun StatusScreen(
     }
 
     var draftBase by remember { mutableStateOf(apiBase) }
-    var draftKey by remember { mutableStateOf(apiKey) }
-    LaunchedEffect(apiBase, apiKey) {
+    var draftKey by remember { mutableStateOf("") }
+    LaunchedEffect(apiBase, locked) {
         draftBase = apiBase
-        draftKey = apiKey
+        if (locked) draftKey = ""
+    }
+
+    fun applyPayload(payload: ProvisionPayload) {
+        val base = payload.apiBase.ifBlank { BuildConfig.DEFAULT_API_BASE }
+        draftBase = base
+        draftKey = payload.apiKey
+        connecting = true
+        onSave(base, payload.apiKey) { result ->
+            connecting = false
+            scope.launch {
+                snackbar.showSnackbar(result.message)
+                if (result.ok) settingsOpen = false
+            }
+        }
     }
 
     fun fmt(ms: Long): String =
         if (ms <= 0L) "Never" else DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.MEDIUM)
             .format(Date(ms))
+
+    if (showResetDialog) {
+        AlertDialog(
+            onDismissRequest = { showResetDialog = false },
+            title = { Text("Reset connection?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "This wipes the device API key. You will need a new provision QR from admin. Type RESET to confirm."
+                    )
+                    OutlinedTextField(
+                        value = resetConfirm,
+                        onValueChange = { resetConfirm = it },
+                        label = { Text("Type RESET") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = resetConfirm.trim().equals("RESET", ignoreCase = true),
+                    onClick = {
+                        showResetDialog = false
+                        resetConfirm = ""
+                        onReset()
+                        draftKey = ""
+                        settingsOpen = true
+                        scope.launch { snackbar.showSnackbar("Connection cleared — scan a new QR") }
+                    }
+                ) { Text("Reset") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResetDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -310,13 +439,10 @@ fun StatusScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                StatusChip(
-                    label = if (smsGranted) "SMS OK" else "SMS needed",
-                    ok = smsGranted
-                )
+                StatusChip(label = if (smsGranted) "SMS OK" else "SMS needed", ok = smsGranted)
                 StatusChip(
                     label = when {
-                        !configured -> "Not linked"
+                        !locked -> "Not provisioned"
                         linkOk -> "Online"
                         else -> "Offline"
                     },
@@ -327,14 +453,14 @@ fun StatusScreen(
                     ok = queueSize == 0 && deadCount == 0,
                     warn = queueSize > 0 || deadCount > 0
                 )
+                if (locked) {
+                    StatusChip(label = "Locked", ok = true)
+                }
             }
 
             if (!smsGranted) {
                 Panel {
-                    Text(
-                        "SMS permission required",
-                        style = MaterialTheme.typography.titleMedium
-                    )
+                    Text("SMS permission required", style = MaterialTheme.typography.titleMedium)
                     Text(
                         "This phone must read e-wallet deposit messages for the company SIM.",
                         style = MaterialTheme.typography.bodyMedium,
@@ -353,11 +479,7 @@ fun StatusScreen(
                 Spacer(Modifier.height(10.dp))
                 MetaRow("Name", deviceName.ifBlank { "Not connected" })
                 MetaRow("Wallet", walletLabel.ifBlank { "—" })
-                MetaRow(
-                    "MSISDN",
-                    walletMsisdn.ifBlank { "—" },
-                    mono = true
-                )
+                MetaRow("MSISDN", walletMsisdn.ifBlank { "—" }, mono = true)
                 MetaRow("Last sync", fmt(lastSyncMs))
                 MetaRow("Last heartbeat", fmt(lastHeartbeatMs))
                 if (oldestPendingMs != null) {
@@ -390,47 +512,25 @@ fun StatusScreen(
                     Column(modifier = Modifier.weight(1f)) {
                         Text("Connection", style = MaterialTheme.typography.titleMedium)
                         Text(
-                            if (configured && !editingConnection) {
-                                "Linked · tap Edit to change URL or key"
-                            } else {
-                                "API base URL and device key"
+                            when {
+                                locked -> "Configured once · key sealed on device"
+                                else -> "Scan admin QR or paste device key (once)"
                             },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    TextButton(
-                        onClick = {
-                            if (configured && !settingsOpen) {
-                                settingsOpen = true
-                            } else if (configured && settingsOpen && !editingConnection) {
-                                editingConnection = true
-                            } else if (configured && editingConnection) {
-                                editingConnection = false
-                                draftBase = apiBase
-                                draftKey = apiKey
-                                settingsOpen = false
-                            } else {
-                                settingsOpen = !settingsOpen
-                            }
+                    if (locked) {
+                        TextButton(onClick = { settingsOpen = !settingsOpen }) {
+                            Text(if (settingsOpen) "Hide" else "Show")
                         }
-                    ) {
-                        Text(
-                            when {
-                                configured && !settingsOpen -> "Show"
-                                configured && settingsOpen && !editingConnection -> "Edit"
-                                configured && editingConnection -> "Cancel"
-                                settingsOpen -> "Hide"
-                                else -> "Show"
-                            }
-                        )
                     }
                 }
 
-                AnimatedVisibility(visible = settingsOpen || !configured) {
+                AnimatedVisibility(visible = settingsOpen || !locked) {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Spacer(Modifier.height(4.dp))
-                        if (!editingConnection && configured) {
+                        if (locked) {
                             MetaRow("API", apiBase, mono = true)
                             MetaRow(
                                 "Key",
@@ -441,15 +541,28 @@ fun StatusScreen(
                                 senderIds.sorted().take(6).joinToString(", ") +
                                     if (senderIds.size > 6) "…" else ""
                             )
+                            OutlinedButton(
+                                onClick = {
+                                    resetConfirm = ""
+                                    showResetDialog = true
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Reset connection…")
+                            }
                         } else {
-                            OutlinedTextField(
-                                value = draftBase,
-                                onValueChange = { draftBase = it },
-                                label = { Text("API base URL") },
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = true,
-                                shape = RoundedCornerShape(12.dp)
-                            )
+                            if (BuildConfig.ALLOW_EDIT_API_BASE) {
+                                OutlinedTextField(
+                                    value = draftBase,
+                                    onValueChange = { draftBase = it },
+                                    label = { Text("API base URL") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+                            } else {
+                                MetaRow("API", BuildConfig.DEFAULT_API_BASE, mono = true)
+                            }
                             OutlinedTextField(
                                 value = draftKey,
                                 onValueChange = { draftKey = it },
@@ -469,30 +582,36 @@ fun StatusScreen(
                                     }
                                 }
                             )
-                            Button(
+                            OutlinedButton(
                                 enabled = !connecting,
+                                onClick = { onScanQr { applyPayload(it) } },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Scan provision QR")
+                            }
+                            Button(
+                                enabled = !connecting && draftKey.isNotBlank(),
                                 onClick = {
+                                    val base = if (BuildConfig.ALLOW_EDIT_API_BASE) {
+                                        draftBase
+                                    } else {
+                                        BuildConfig.DEFAULT_API_BASE
+                                    }
                                     connecting = true
-                                    onSave(draftBase, draftKey) { result ->
+                                    onSave(base, draftKey) { result ->
                                         connecting = false
                                         scope.launch {
                                             snackbar.showSnackbar(result.message)
                                             if (result.ok) {
-                                                editingConnection = false
                                                 settingsOpen = false
-                                                val p = Prefs(context)
-                                                withContext(Dispatchers.IO) {
-                                                    applyProbeMeta(p, draftBase, draftKey)
-                                                }
-                                            } else {
-                                                Prefs(context).setLastError(result.message)
+                                                draftKey = ""
                                             }
                                         }
                                     }
                                 },
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text(if (connecting) "Connecting…" else "Save & connect")
+                                Text(if (connecting) "Connecting…" else "Save & lock")
                             }
                         }
                     }
@@ -513,7 +632,7 @@ fun StatusScreen(
             }
 
             Text(
-                "Device key only — staff use the web dashboard. No personal login on this phone.",
+                "Device key only — staff use the web dashboard. Provision once; reset only when replacing this phone.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -568,7 +687,7 @@ private fun HealthBanner(health: HealthState, deviceName: String) {
         )
         HealthState.Setup -> Quad(
             "Setup required",
-            "Grant SMS and connect with a device API key",
+            "Grant SMS and scan the admin provision QR once",
             CaptureColors.DangerSoft,
             CaptureColors.Danger
         )
