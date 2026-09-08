@@ -1,0 +1,40 @@
+# Render Blueprint — API only (web stays on Vercel; MySQL stays on DigitalOcean)
+# https://dashboard.render.com/blueprints
+#
+# After first deploy:
+# 1. Set DATABASE_URL (DO MySQL) and JWT_SECRET in the Render dashboard
+# 2. Set CORS_ORIGIN to your Vercel URL (e.g. https://ewallet-recon.vercel.app)
+# 3. Allow Render egress to your DO MySQL trusted sources
+# 4. Prefer Starter plan (not Free) so capture phones stay online
+
+services:
+  - type: web
+    name: ewallet-recon-api
+    runtime: docker
+    plan: starter
+    region: frankfurt
+    branch: main
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: "0.0.0.0"
+      - key: JWT_EXPIRES_IN
+        value: 8h
+      - key: MATCH_TIME_WINDOW_MINUTES
+        value: "15"
+      - key: DEVICE_OFFLINE_MINUTES
+        value: "5"
+      # Set these in the Render dashboard (Blueprint sync: false = secret / per-env)
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false
+      - key: PUBLIC_API_BASE_URL
+        sync: false

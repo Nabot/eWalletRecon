@@ -10,7 +10,12 @@ import { addClient } from "./ws/hub";
 import jwt from "jsonwebtoken";
 
 const app = express();
-app.use(cors({ origin: config.corsOrigin }));
+const corsOrigins = config.corsOrigin.split(",").map((o) => o.trim()).filter(Boolean);
+app.use(
+  cors({
+    origin: corsOrigins.length <= 1 ? corsOrigins[0] ?? true : corsOrigins,
+  })
+);
 app.use(express.json({ limit: "1mb" }));
 
 app.get("/health", (_req, res) => {
