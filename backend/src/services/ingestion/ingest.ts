@@ -73,6 +73,33 @@ export async function ingestDeposit(input: NormalizedDepositInput): Promise<Inge
     }
   }
 
+  // SMS safety net: same wallet + identical body within a short window
+  // (covers older clients that hashed PDU vs inbox timestamps differently).
+  if (input.source === "SMS" && input.rawMessage.trim()) {
+    const windowMs = 5 * 60 * 1000;
+    const received = input.receivedAt.getTime();
+    const nearDup = await prisma.depositEvent.findFirst({
+      where: {
+        walletNumberId: input.walletNumberId,
+        source: "SMS",
+        rawMessage: input.rawMessage,
+        receivedAt: {
+          gte: new Date(received - windowMs),
+          lte: new Date(received + windowMs),
+        },
+      },
+      orderBy: { receivedAt: "asc" },
+    });
+    if (nearDup) {
+      return {
+        depositEventId: nearDup.id,
+        created: false,
+        matchStatus: nearDup.matchStatus,
+        credited: nearDup.matchStatus === "MATCHED",
+      };
+    }
+  }
+
   const event = await prisma.depositEvent.create({
     data: {
       walletNumberId: input.walletNumberId,
