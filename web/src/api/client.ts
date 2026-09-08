@@ -191,6 +191,18 @@ export const api = {
       }[]
     >("/api/wallets", token),
 
+  renameWallet: (token: string, id: string, label: string) =>
+    request<{
+      id: string;
+      msisdn: string;
+      label: string;
+      provider: WalletProvider;
+      device?: { id: string; name: string; lastSeenAt: string | null } | null;
+    }>(`/api/wallets/${id}`, token, {
+      method: "PATCH",
+      body: JSON.stringify({ label }),
+    }),
+
   walletTotals: (token: string, period: "day" | "week") =>
     request<WalletTotalsDto[]>(`/api/reports/wallet-totals?period=${period}`, token),
 

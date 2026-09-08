@@ -18,6 +18,7 @@ export const ACTION_LABELS: Record<string, string> = {
   DEVICE_FORCE_SYNC: "Force sync requested",
   DEVICE_PING: "Ping requested",
   DEVICE_WIPE_REQUESTED: "Remote wipe requested",
+  WALLET_RENAMED: "Wallet renamed",
   SMS_BATCH_SYNC: "SMS batch synced",
   ADMIN_REPARSE: "Admin reparse",
   STAFF_LOGIN: "Staff signed in",
@@ -53,6 +54,9 @@ export function auditEntityHref(log: AuditLogDto): string | null {
   if (log.entityType === "CaptureDevice" && log.entityId) {
     return `/devices?device=${encodeURIComponent(log.entityId)}`;
   }
+  if (log.entityType === "WalletNumber") {
+    return "/devices";
+  }
   return null;
 }
 
@@ -68,6 +72,13 @@ export function auditEntityLinkLabel(log: AuditLogDto): string {
       (typeof m.name === "string" && m.name) ||
       null;
     return name ? `Device · ${name}` : `Device ${log.entityId.slice(0, 8)}…`;
+  }
+  if (log.entityType === "WalletNumber") {
+    const label =
+      (typeof m.label === "string" && m.label) ||
+      (typeof m.previousLabel === "string" && m.previousLabel) ||
+      null;
+    return label ? `Wallet · ${label}` : `Wallet ${log.entityId.slice(0, 8)}…`;
   }
   if (log.entityType === "StaffUser") return "Staff account";
   if (log.entityType === "TopupRequest") return `Top-up ${log.entityId.slice(0, 8)}…`;
@@ -90,6 +101,14 @@ export function auditDetail(log: AuditLogDto): string {
   if (typeof m.deviceName === "string" && m.deviceName) parts.push(m.deviceName);
   else if (typeof m.name === "string" && m.name && log.entityType === "CaptureDevice") {
     parts.push(m.name);
+  }
+  if (log.entityType === "WalletNumber") {
+    if (typeof m.previousLabel === "string" && typeof m.label === "string") {
+      parts.push(`${m.previousLabel} → ${m.label}`);
+    } else if (typeof m.label === "string") {
+      parts.push(m.label);
+    }
+    if (typeof m.msisdn === "string" && m.msisdn) parts.push(m.msisdn);
   }
 
   if (parts.length === 0) return auditEntityLinkLabel(log);

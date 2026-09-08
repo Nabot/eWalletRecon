@@ -21,6 +21,7 @@ const ENTITY_OPTIONS = [
   { value: "", label: "All entities" },
   { value: "DepositEvent", label: "Deposit" },
   { value: "CaptureDevice", label: "Device" },
+  { value: "WalletNumber", label: "Wallet" },
   { value: "StaffUser", label: "Staff" },
   { value: "TopupRequest", label: "Top-up" },
 ];

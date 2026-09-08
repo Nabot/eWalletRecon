@@ -356,6 +356,49 @@ apiRouter.get("/wallets", async (_req, res) => {
   res.json(wallets);
 });
 
+apiRouter.patch("/wallets/:id", requireRole("ADMIN"), async (req, res) => {
+  const body = z
+    .object({
+      label: z.string().min(1).max(120),
+    })
+    .safeParse(req.body);
+  if (!body.success) return res.status(400).json({ error: body.error.flatten() });
+
+  const existing = await prisma.walletNumber.findUnique({ where: { id: req.params.id } });
+  if (!existing) return res.status(404).json({ error: "Wallet not found" });
+
+  const label = body.data.label.trim();
+  if (!label) return res.status(400).json({ error: "Label is required" });
+  if (label === existing.label) {
+    const unchanged = await prisma.walletNumber.findUniqueOrThrow({
+      where: { id: existing.id },
+      include: { device: { select: { id: true, name: true, lastSeenAt: true } } },
+    });
+    return res.json(unchanged);
+  }
+
+  const wallet = await prisma.walletNumber.update({
+    where: { id: existing.id },
+    data: { label },
+    include: { device: { select: { id: true, name: true, lastSeenAt: true } } },
+  });
+
+  await writeAuditLog({
+    actorType: "STAFF",
+    actorId: req.staff!.staffId,
+    action: "WALLET_RENAMED",
+    entityType: "WalletNumber",
+    entityId: wallet.id,
+    metadata: {
+      previousLabel: existing.label,
+      label: wallet.label,
+      msisdn: wallet.msisdn,
+    },
+  });
+
+  res.json(wallet);
+});
+
 function provisionPayload(apiKey: string) {
   const provision = {
     v: 1 as const,

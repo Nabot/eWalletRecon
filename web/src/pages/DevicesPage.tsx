@@ -244,6 +244,25 @@ export default function DevicesPage() {
         </div>
       )}
 
+      {isAdmin && (wallets.data?.length ?? 0) > 0 && (
+        <div className="mb-6 border border-ink-700 rounded-lg p-4 bg-ink-900 shadow-fb">
+          <h3 className="font-sans font-semibold text-sand-50">Wallet numbers</h3>
+          <p className="text-sm text-sand-200 mt-1">
+            Rename the display label for each receiving wallet phone. Provider and MSISDN stay the same.
+          </p>
+          <ul className="mt-3 space-y-2">
+            {(wallets.data ?? []).map((w) => (
+              <WalletRenameRow
+                key={w.id}
+                wallet={w}
+                token={token!}
+                onToast={push}
+              />
+            ))}
+          </ul>
+        </div>
+      )}
+
       {provision && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
@@ -359,6 +378,109 @@ export default function DevicesPage() {
         ))}
       </div>
     </div>
+  );
+}
+
+function WalletRenameRow({
+  wallet: w,
+  token,
+  onToast,
+}: {
+  wallet: {
+    id: string;
+    msisdn: string;
+    label: string;
+    provider: string;
+    device?: { id: string; name: string; lastSeenAt: string | null } | null;
+  };
+  token: string;
+  onToast: (msg: string, kind: "success" | "error" | "info") => void;
+}) {
+  const qc = useQueryClient();
+  const [renaming, setRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState(w.label);
+
+  const rename = useMutation({
+    mutationFn: (nextLabel: string) => api.renameWallet(token, w.id, nextLabel),
+    onSuccess: () => {
+      setRenaming(false);
+      void qc.invalidateQueries({ queryKey: ["wallets"] });
+      void qc.invalidateQueries({ queryKey: ["devices"] });
+      void qc.invalidateQueries({ queryKey: ["audit"] });
+      onToast("Wallet renamed", "success");
+    },
+    onError: (e: Error) => onToast(e.message, "error"),
+  });
+
+  return (
+    <li className="flex flex-wrap items-center gap-2 rounded-md border border-ink-800 bg-ink-950/80 px-3 py-2">
+      {renaming ? (
+        <form
+          className="flex flex-1 min-w-[12rem] gap-1"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const next = renameValue.trim();
+            if (!next || next === w.label) {
+              setRenaming(false);
+              setRenameValue(w.label);
+              return;
+            }
+            rename.mutate(next);
+          }}
+        >
+          <input
+            autoFocus
+            className="flex-1 min-w-0 rounded-md bg-ink-900 border border-ink-700 px-2 py-1 text-sm"
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                setRenaming(false);
+                setRenameValue(w.label);
+              }
+            }}
+            maxLength={120}
+          />
+          <button
+            type="submit"
+            disabled={rename.isPending}
+            className="rounded-md bg-veld-600 px-2 py-1 text-xs text-white font-semibold disabled:opacity-50"
+          >
+            Save
+          </button>
+          <button
+            type="button"
+            className="rounded-md border border-ink-700 px-2 py-1 text-xs hover:bg-ink-800"
+            onClick={() => {
+              setRenaming(false);
+              setRenameValue(w.label);
+            }}
+          >
+            Cancel
+          </button>
+        </form>
+      ) : (
+        <>
+          <div className="flex-1 min-w-0">
+            <p className="font-sans font-semibold text-sand-50 truncate">{w.label}</p>
+            <p className="font-mono text-[11px] text-sand-200 mt-0.5">
+              {providerLabel(w.provider)} · {w.msisdn}
+              {w.device ? ` · ${w.device.name}` : " · unbound"}
+            </p>
+          </div>
+          <button
+            type="button"
+            className="rounded-md border border-ink-700 px-2 py-1 text-xs hover:bg-ink-800 shrink-0"
+            onClick={() => {
+              setRenameValue(w.label);
+              setRenaming(true);
+            }}
+          >
+            Rename
+          </button>
+        </>
+      )}
+    </li>
   );
 }
 
