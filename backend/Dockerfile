@@ -1,4 +1,5 @@
 FROM node:20-alpine AS builder
+RUN apk add --no-cache openssl libc6-compat
 WORKDIR /app
 COPY package.json package-lock.json* ./
 COPY shared ./shared
@@ -10,6 +11,7 @@ RUN npx prisma generate
 RUN npm run build
 
 FROM node:20-alpine
+RUN apk add --no-cache openssl libc6-compat
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3001
