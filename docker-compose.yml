@@ -1,21 +1,25 @@
 services:
-  postgres:
-    image: postgres:16-alpine
+  mysql:
+    image: mysql:8.4
     container_name: ewallet-recon-db
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ewallet
-      POSTGRES_PASSWORD: ewallet
-      POSTGRES_DB: ewallet_recon
+      MYSQL_ROOT_PASSWORD: ewallet
+      MYSQL_DATABASE: ewallet_recon
+      MYSQL_USER: ewallet
+      MYSQL_PASSWORD: ewallet
     ports:
-      - "5432:5432"
+      - "3306:3306"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - mysql_data:/var/lib/mysql
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ewallet -d ewallet_recon"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uewallet", "-pewallet"]
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 20
 
   backend:
     build:
@@ -24,10 +28,10 @@ services:
     container_name: ewallet-recon-api
     restart: unless-stopped
     depends_on:
-      postgres:
+      mysql:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://ewallet:ewallet@postgres:5432/ewallet_recon?schema=public
+      DATABASE_URL: mysql://ewallet:ewallet@mysql:3306/ewallet_recon
       JWT_SECRET: change-me-in-production-use-long-secret
       PORT: 3001
       NODE_ENV: production
@@ -37,4 +41,4 @@ services:
       - "3001:3001"
 
 volumes:
-  postgres_data:
+  mysql_data:

@@ -1,19 +1,28 @@
 # Backend API
 
-Node.js + TypeScript + Express + Prisma + PostgreSQL.
+Node.js + TypeScript + Express + Prisma + MySQL.
 
 ## Setup
 
 ```bash
 # from repo root
 cp backend/.env.example backend/.env
-docker compose up -d postgres
+docker compose up -d mysql
 npm install
-cd backend
-npx prisma migrate dev --name init
+npm run db:migrate
 npm run db:seed
-npm run dev
+npm run dev:backend
 ```
+
+### DigitalOcean Managed MySQL
+
+Use the connection string from the DO control panel, for example:
+
+```env
+DATABASE_URL=mysql://doadmin:PASSWORD@HOST:25060/DEFADB?sslaccept=strict
+```
+
+Then run migrations against that DB: `npm run db:migrate`.
 
 ## Scripts
 
@@ -38,15 +47,3 @@ Seeded staff: `admin@example.com` / `admin123`
 - `POST /api/capture/heartbeat`
 - `GET /api/deposits`, `GET /api/exceptions`
 - `POST /api/deposits/:id/resolve` — manual credit
-- `POST /api/admin/reparse` — ADMIN re-run parsers on stored `rawMessage`
-- `GET /api/reports/wallet-totals?period=day|week`
-- `GET /api/audit`
-- `WS /ws?token=<jwt>` — live deposit/device events
-
-## Ingestion seam (webhooks)
-
-See `src/services/ingestion/ingest.ts`. SMS and future merchant webhooks both call `ingestDeposit()`; matching engine is source-agnostic. `ingestFromWebhook()` is a stub for provider APIs.
-
-## SMS parsers
-
-**Placeholder formats only.** Supply real SMS templates and sender IDs before production. Parsers live under `src/services/parsers/`.

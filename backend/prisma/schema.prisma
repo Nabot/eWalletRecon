@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
   url      = env("DATABASE_URL")
 }
 
@@ -81,7 +81,7 @@ model DepositEvent {
   senderMsisdn          String?
   senderName            String?
   reference             String?
-  rawMessage            String
+  rawMessage            String         @db.Text
   receivedAt            DateTime
   matchStatus           MatchStatus    @default(PENDING)
   matchedTopupRequestId String?
@@ -92,7 +92,7 @@ model DepositEvent {
   /// Manual credit: betting account id entered by staff
   creditBetAccountId    String?
   /// Manual credit: free-text note
-  creditNote            String?
+  creditNote            String?        @db.Text
   creditedAt            DateTime?
   creditedByStaffId     String?
 

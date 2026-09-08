@@ -19,11 +19,11 @@ Full-stack system for a Namibian betting company to capture e-wallet deposit SMS
 - Docker & Docker Compose
 - JDK 17+ and Android Studio (for the capture app)
 
-### 1. Start Postgres + API
+### 1. Start MySQL + API
 
 ```bash
 cp backend/.env.example backend/.env
-docker compose up -d
+docker compose up -d mysql
 npm install
 npm run db:migrate
 npm run db:seed
@@ -31,6 +31,8 @@ npm run dev:backend
 ```
 
 API: `http://localhost:3001` · Health: `GET /health`
+
+For **DigitalOcean Managed MySQL**, set `DATABASE_URL` in `backend/.env` to the panel connection string (usually add `?sslaccept=strict`).
 
 ### 2. Start dashboard
 

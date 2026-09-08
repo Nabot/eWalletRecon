@@ -12,7 +12,7 @@ function required(name: string, fallback?: string): string {
 export const config = {
   port: Number(process.env.PORT ?? 3001),
   host: process.env.HOST ?? "0.0.0.0",
-  databaseUrl: required("DATABASE_URL", "postgresql://ewallet:ewallet@localhost:5432/ewallet_recon?schema=public"),
+  databaseUrl: required("DATABASE_URL", "mysql://ewallet:ewallet@localhost:3306/ewallet_recon"),
   jwtSecret: required("JWT_SECRET", "dev-secret-change-me"),
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? "8h",
   corsOrigin: process.env.CORS_ORIGIN ?? "http://localhost:5173",
