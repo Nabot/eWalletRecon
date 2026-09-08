@@ -12,12 +12,13 @@
     "dev:backend": "npm run dev -w backend",
     "dev:web": "npm run dev -w web",
     "build": "npm run build -w shared && npm run build -w backend && npm run build -w web",
+    "build:vercel": "npm run build --workspace=@ewallet/shared && npm run build --workspace=@ewallet/web",
     "test": "npm run test -w backend",
     "db:migrate": "npm run db:migrate -w backend",
     "db:seed": "npm run db:seed -w backend",
     "db:studio": "npm run db:studio -w backend"
   },
   "engines": {
-    "node": ">=20"
+    "node": "20.x"
   }
 }
