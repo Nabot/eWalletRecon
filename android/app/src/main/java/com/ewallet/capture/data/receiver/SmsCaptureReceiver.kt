@@ -7,6 +7,7 @@ import android.provider.Telephony
 import android.util.Log
 import com.ewallet.capture.data.db.CaptureDatabase
 import com.ewallet.capture.data.db.PendingSmsEntity
+import com.ewallet.capture.util.NonDepositSms
 import com.ewallet.capture.util.Prefs
 import com.ewallet.capture.util.SenderFilter
 import com.ewallet.capture.util.WorkScheduler
@@ -40,6 +41,7 @@ class SmsCaptureReceiver : BroadcastReceiver() {
 
                     val body = parts.joinToString(separator = "") { it.displayMessageBody.orEmpty() }
                     if (body.isBlank()) continue
+                    if (NonDepositSms.shouldIgnore(body)) continue
 
                     val receivedAt = parts.minOf { it.timestampMillis }
                     val key = smsIdempotencyKey(sender, body, receivedAt)

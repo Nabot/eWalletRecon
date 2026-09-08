@@ -74,6 +74,25 @@ export const api = {
       body: JSON.stringify({ name, walletNumberId }),
     }),
 
+  renameDevice: (token: string, id: string, name: string) =>
+    request<CaptureDeviceDto>(`/api/devices/${id}`, token, {
+      method: "PATCH",
+      body: JSON.stringify({ name }),
+    }),
+
+  rotateDeviceKey: (token: string, id: string) =>
+    request<{
+      id: string;
+      name: string;
+      walletNumberId: string;
+      apiKey: string;
+      provision: { v: number; apiBase: string; apiKey: string };
+      provisionQrPayload: string;
+    }>(`/api/devices/${id}/rotate-key`, token, { method: "POST" }),
+
+  revokeDevice: (token: string, id: string) =>
+    request<{ ok: true; id: string }>(`/api/devices/${id}`, token, { method: "DELETE" }),
+
   wallets: (token: string) =>
     request<
       {

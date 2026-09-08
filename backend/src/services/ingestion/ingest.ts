@@ -13,6 +13,7 @@ import type { DepositSource, WalletProvider } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { writeAuditLog } from "../../lib/audit";
 import { parseSmsWithFallback } from "../parsers";
+import { isNonDepositSms } from "../parsers/nonDepositSms";
 import { broadcast } from "../../ws/hub";
 import { toNumber } from "../../lib/money";
 
@@ -162,9 +163,27 @@ export async function ingestFromSms(params: {
   captureIdempotencyKey?: string;
   deviceId: string;
 }): Promise<IngestResult> {
+  // PIN / OTP / "Dear customer" follow-ups are not deposits (e.g. BlueVoucher PIN SMS).
+  if (isNonDepositSms(params.rawMessage)) {
+    return {
+      depositEventId: "",
+      created: false,
+      matchStatus: "SKIPPED",
+      credited: false,
+    };
+  }
+
   const hit = parseSmsWithFallback(params.provider, params.rawMessage);
   if (!hit) {
-    // Always store raw so staff can reparse after a parser update.
+    // Unknown format: only keep if it still looks like a credit; otherwise skip noise.
+    if (!/\b(credited|sent you|received)\b/i.test(params.rawMessage)) {
+      return {
+        depositEventId: "",
+        created: false,
+        matchStatus: "SKIPPED",
+        credited: false,
+      };
+    }
     return ingestDeposit({
       walletNumberId: params.walletNumberId,
       provider: params.provider,

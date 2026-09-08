@@ -15,6 +15,16 @@ Reference#: 264813887790
 - Sender MSISDN: `Reference#` when it looks like a phone number
 - Timestamp: `dd/MM/yyyy HH:mm:ss` (CAT)
 - Phone sender ID: **PAYPULSE**
+- PayPulse often sends a **second** SMS (PIN / “Dear customer…”) from the same sender — that is **not** a deposit and must be ignored
+
+### BlueVoucher PIN follow-up (ignore)
+
+```
+Dear Customer,
+Your BlueVoucher PIN is 4065.
+This PIN is valid for 72 hrs, if PIN expired, dial *140*6626#. Use this PIN to withdraw cash at any Standard Bank ATM.
+Queries 92860.
+```
 
 ## EasyWallet → Bank WHK
 

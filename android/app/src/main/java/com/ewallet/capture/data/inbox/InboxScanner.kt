@@ -8,6 +8,7 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import com.ewallet.capture.data.db.CaptureDatabase
 import com.ewallet.capture.data.db.PendingSmsEntity
+import com.ewallet.capture.util.NonDepositSms
 import com.ewallet.capture.util.Prefs
 import com.ewallet.capture.util.SenderFilter
 import com.ewallet.capture.util.smsIdempotencyKey
@@ -86,6 +87,7 @@ object InboxScanner {
                 val date = cursor.getLong(iDate)
                 if (date > maxDate) maxDate = date
                 if (body.isBlank()) continue
+                if (NonDepositSms.shouldIgnore(body)) continue
                 if (!SenderFilter.matches(sender, allowed)) continue
 
                 val rowId = dao.insert(
