@@ -32,6 +32,9 @@ interface PendingSmsDao {
     @Query("UPDATE pending_sms SET syncAttempts = syncAttempts + 1 WHERE idempotencyKey IN (:keys)")
     suspend fun bumpAttempts(keys: List<String>)
 
+    @Query("DELETE FROM pending_sms")
+    suspend fun deleteAll()
+
     @Query("DELETE FROM pending_sms WHERE syncAttempts >= :maxAttempts")
     suspend fun purgeDead(maxAttempts: Int = 8): Int
 }

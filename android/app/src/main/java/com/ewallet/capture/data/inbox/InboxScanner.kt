@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.provider.Telephony
+import android.util.Log
 import androidx.core.content.ContextCompat
 import com.ewallet.capture.data.db.CaptureDatabase
 import com.ewallet.capture.data.db.PendingSmsEntity
@@ -15,15 +16,22 @@ import kotlinx.coroutines.flow.first
 data class InboxScanResult(
     val examined: Int = 0,
     val enqueued: Int = 0,
+    val skippedHistoryInit: Boolean = false,
 )
 
 /**
  * Backfills allowlisted SMS from the device inbox using the same idempotency
- * keys as the live broadcast path so duplicates are harmless.
+ * keys as the live broadcast path.
+ *
+ * Important: if the inbox watermark was never set, we **initialize it to now**
+ * and do **not** scan historical SMS. Scanning 7 days of history re-uploads
+ * old FNB/PayPulse messages on every fresh install / key-format change.
  */
 object InboxScanner {
-    private const val LOOKBACK_MS = 7L * 24 * 60 * 60 * 1000
-    private const val MAX_ROWS = 200
+    /** Only re-read slightly before watermark for clock skew / late provider writes. */
+    private const val SKEW_MS = 2L * 60 * 1000
+    private const val MAX_ROWS = 100
+    private const val TAG = "InboxScanner"
 
     suspend fun scanAndEnqueue(context: Context): InboxScanResult {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS)
@@ -36,11 +44,15 @@ object InboxScanner {
         val allowed = prefs.senderIds.first()
         if (allowed.isEmpty()) return InboxScanResult()
 
-        val watermark = prefs.inboxWatermarkMs.first()
-        val floor = maxOf(
-            watermark,
-            System.currentTimeMillis() - LOOKBACK_MS
-        )
+        var watermark = prefs.inboxWatermarkMs.first()
+        if (watermark <= 0L) {
+            val now = System.currentTimeMillis()
+            prefs.setInboxWatermarkMs(now)
+            Log.i(TAG, "Initialized inbox watermark to now — skipping historical SMS")
+            return InboxScanResult(skippedHistoryInit = true)
+        }
+
+        val floor = (watermark - SKEW_MS).coerceAtLeast(0L)
 
         val projection = arrayOf(
             Telephony.Sms.ADDRESS,
@@ -88,7 +100,6 @@ object InboxScanner {
             }
         }
 
-        // Advance watermark even if nothing matched so we don't re-scan forever.
         if (maxDate > watermark) {
             prefs.setInboxWatermarkMs(maxDate)
         }

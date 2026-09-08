@@ -13,8 +13,8 @@ android {
         applicationId = "com.ewallet.capture"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "1.3.1"
+        versionCode = 6
+        versionName = "1.3.2"
         buildConfigField("String", "DEFAULT_API_BASE", "\"http://10.0.2.2:3001\"")
         buildConfigField("boolean", "ALLOW_CLEARTEXT", "true")
         buildConfigField("boolean", "ALLOW_EDIT_API_BASE", "true")

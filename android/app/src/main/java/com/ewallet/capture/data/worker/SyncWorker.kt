@@ -15,6 +15,11 @@ class SyncWorker(appContext: Context, params: WorkerParameters) : CoroutineWorke
     override suspend fun doWork(): Result {
         val prefs = Prefs(applicationContext)
         prefs.ensureMigrated()
+        val dao = CaptureDatabase.get(applicationContext).pendingSmsDao()
+        prefs.applyCatchupPolicyV3IfNeeded {
+            dao.deleteAll()
+            Log.i(TAG, "Catch-up policy v3: cleared pending queue + reset inbox watermark")
+        }
         val apiKey = prefs.apiKey.first()
         val base = prefs.apiBase.first()
         if (apiKey.isBlank()) {
@@ -22,6 +27,7 @@ class SyncWorker(appContext: Context, params: WorkerParameters) : CoroutineWorke
         }
 
         // Catch SMS missed while the process was dead / permissions pending.
+        // Does not scan days of inbox history (watermark init / policy v3).
         try {
             InboxScanner.scanAndEnqueue(applicationContext)
         } catch (e: Exception) {
@@ -29,7 +35,6 @@ class SyncWorker(appContext: Context, params: WorkerParameters) : CoroutineWorke
             prefs.setLastError("Inbox scan: ${e.message ?: e.javaClass.simpleName}")
         }
 
-        val dao = CaptureDatabase.get(applicationContext).pendingSmsDao()
         val batch = dao.peek(50, MAX_ATTEMPTS)
         if (batch.isEmpty()) {
             return Result.success()

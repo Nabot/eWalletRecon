@@ -5,6 +5,7 @@ import android.content.RestrictionsManager
 import com.ewallet.capture.BuildConfig
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
@@ -23,6 +24,7 @@ object PrefKeys {
     val LAST_ERROR_MS = longPreferencesKey("last_error_ms")
     val OFFLINE_AFTER_MINUTES = longPreferencesKey("offline_after_minutes")
     val INBOX_WATERMARK_MS = longPreferencesKey("inbox_watermark_ms")
+    val CATCHUP_POLICY_V = longPreferencesKey("catchup_policy_v")
     val SENDER_IDS = stringPreferencesKey("sender_ids")
     // Legacy plaintext keys — migrated once into SecureStore then removed
     val LEGACY_API_BASE = stringPreferencesKey("api_base")
@@ -189,7 +191,25 @@ class Prefs(private val context: Context) {
         context.dataStore.edit { it[PrefKeys.INBOX_WATERMARK_MS] = ms }
     }
 
+    /**
+     * One-shot upgrade: drop any queued historical SMS and start the inbox
+     * watermark at "now" so Sync no longer re-uploads old inbox messages.
+     * @return true if the purge ran this call
+     */
+    suspend fun applyCatchupPolicyV3IfNeeded(purgeQueue: suspend () -> Unit): Boolean {
+        val current = context.dataStore.data.map { it[PrefKeys.CATCHUP_POLICY_V] ?: 0L }.first()
+        if (current >= CATCHUP_POLICY_VERSION) return false
+        purgeQueue()
+        context.dataStore.edit {
+            it[PrefKeys.INBOX_WATERMARK_MS] = System.currentTimeMillis()
+            it[PrefKeys.CATCHUP_POLICY_V] = CATCHUP_POLICY_VERSION
+        }
+        return true
+    }
+
     companion object {
+        const val CATCHUP_POLICY_VERSION = 3L
+
         fun defaultSenderIds(): Set<String> = setOf(
             "paypulse",
             "362626",

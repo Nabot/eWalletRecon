@@ -67,7 +67,6 @@ import androidx.lifecycle.lifecycleScope
 import com.ewallet.capture.BuildConfig
 import com.ewallet.capture.data.api.CaptureApiClient
 import com.ewallet.capture.data.db.CaptureDatabase
-import com.ewallet.capture.data.inbox.InboxScanner
 import com.ewallet.capture.data.worker.SyncWorker
 import com.ewallet.capture.ui.theme.CaptureColors
 import com.ewallet.capture.ui.theme.CaptureTheme
@@ -94,10 +93,7 @@ class MainActivity : ComponentActivity() {
             ContextCompat.checkSelfPermission(this, Manifest.permission.RECEIVE_SMS) ==
             PackageManager.PERMISSION_GRANTED
         if (smsOk) {
-            lifecycleScope.launch(Dispatchers.IO) {
-                InboxScanner.scanAndEnqueue(this@MainActivity)
-                WorkScheduler.enqueueSyncNow(this@MainActivity)
-            }
+            WorkScheduler.enqueueSyncNow(this)
         }
     }
 
@@ -131,6 +127,9 @@ class MainActivity : ComponentActivity() {
                             }
                             if (result.ok) {
                                 prefs.lockConnection()
+                                withContext(Dispatchers.IO) {
+                                    prefs.setInboxWatermarkMs(System.currentTimeMillis())
+                                }
                                 WorkScheduler.enqueueHeartbeatAndSync(this@MainActivity)
                             }
                             onResult(result)
@@ -152,9 +151,7 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     onSyncNow = {
-                        lifecycleScope.launch(Dispatchers.IO) {
-                            InboxScanner.scanAndEnqueue(this@MainActivity)
-                        }
+                        // SyncWorker applies catch-up policy then inbox scan — don't scan first.
                         WorkScheduler.enqueueHeartbeatAndSync(this)
                     },
                     onRequestPermissions = { requestSmsPermissionsIfNeeded(force = true) },
@@ -193,6 +190,7 @@ class MainActivity : ComponentActivity() {
         val result = withContext(Dispatchers.IO) { probeAndBind(prefs, base, payload.apiKey) }
         if (result.ok) {
             prefs.lockConnection()
+            prefs.setInboxWatermarkMs(System.currentTimeMillis())
             WorkScheduler.enqueueHeartbeatAndSync(this)
         }
     }
