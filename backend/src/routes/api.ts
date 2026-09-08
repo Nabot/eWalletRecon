@@ -66,13 +66,14 @@ apiRouter.get("/deposits", async (req, res) => {
   }
 
   if (q) {
+    // MySQL: no Prisma `mode: "insensitive"` (Postgres-only). utf8mb4_unicode_ci is CI by default.
     where.OR = [
-      { creditBetAccountId: { contains: q, mode: "insensitive" } },
-      { creditNote: { contains: q, mode: "insensitive" } },
-      { reference: { contains: q, mode: "insensitive" } },
+      { creditBetAccountId: { contains: q } },
+      { creditNote: { contains: q } },
+      { reference: { contains: q } },
       { senderMsisdn: { contains: q } },
-      { senderName: { contains: q, mode: "insensitive" } },
-      { rawMessage: { contains: q, mode: "insensitive" } },
+      { senderName: { contains: q } },
+      { rawMessage: { contains: q } },
     ];
   }
 
@@ -245,8 +246,8 @@ apiRouter.get("/users", async (req, res) => {
     where: q
       ? {
           OR: [
-            { name: { contains: q, mode: "insensitive" } },
-            { betAccountId: { contains: q, mode: "insensitive" } },
+            { name: { contains: q } },
+            { betAccountId: { contains: q } },
             { registeredMsisdn: { contains: q } },
           ],
         }
@@ -266,8 +267,8 @@ apiRouter.get("/topups", async (req, res) => {
       ...(q
         ? {
             OR: [
-              { refCode: { contains: q, mode: "insensitive" } },
-              { betAccountId: { contains: q, mode: "insensitive" } },
+              { refCode: { contains: q } },
+              { betAccountId: { contains: q } },
             ],
           }
         : {}),

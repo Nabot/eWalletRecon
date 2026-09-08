@@ -84,7 +84,7 @@ export async function matchDepositEvent(
     if (refFromFields) {
       const byRef = await tx.topupRequest.findFirst({
         where: {
-          refCode: { equals: refFromFields, mode: "insensitive" },
+          refCode: { equals: refFromFields },
           status: TopupStatus.AWAITING,
           expiresAt: { gt: now },
         },
