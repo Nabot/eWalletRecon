@@ -74,7 +74,7 @@ export default function Layout() {
         <div className="mx-auto max-w-7xl px-3 sm:px-4 h-14 flex items-center gap-3">
           <div className="min-w-0 shrink">
             <p className="font-sans text-lg sm:text-xl font-semibold tracking-tight text-sand-50 leading-tight truncate">
-              E-Wallet Recon
+              WalletRecon
             </p>
             <p className="hidden sm:flex text-xs text-sand-200 font-sans items-center gap-2">
               NAD

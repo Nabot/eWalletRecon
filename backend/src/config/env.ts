@@ -23,5 +23,15 @@ export const config = {
   ),
   matchTimeWindowMinutes: Number(process.env.MATCH_TIME_WINDOW_MINUTES ?? 15),
   deviceOfflineMinutes: Number(process.env.DEVICE_OFFLINE_MINUTES ?? 5),
+  /** Banner / webhook when offline longer than this (defaults to offline window). */
+  deviceOfflineAlertMinutes: Number(
+    process.env.DEVICE_OFFLINE_ALERT_MINUTES ?? process.env.DEVICE_OFFLINE_MINUTES ?? 5
+  ),
+  /** Banner when handset reports pending SMS queue ≥ this count. */
+  deviceQueueAlertCount: Number(process.env.DEVICE_QUEUE_ALERT_COUNT ?? 5),
+  /** Phones below this versionCode show “Update required”. 0 = disabled. */
+  minCaptureVersionCode: Number(process.env.MIN_CAPTURE_VERSION_CODE ?? 7),
+  /** Optional Slack/Discord/generic webhook for phone alerts. */
+  alertWebhookUrl: process.env.ALERT_WEBHOOK_URL?.trim() || null,
   nodeEnv: process.env.NODE_ENV ?? "development",
 };

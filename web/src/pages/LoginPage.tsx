@@ -30,7 +30,7 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center px-4 bg-ink-950">
       <div className="w-full max-w-md">
         <h1 className="font-sans text-4xl font-bold tracking-tight text-veld-600 mb-2">
-          E-Wallet Recon
+          WalletRecon
         </h1>
         <p className="text-sand-200 mb-8 font-sans">Staff sign-in for deposit reconciliation</p>
         <form

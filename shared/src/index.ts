@@ -116,11 +116,47 @@ export interface CaptureDeviceDto {
   walletNumberId: string;
   lastSeenAt: string | null;
   online: boolean;
+  /** Offline longer than alert threshold */
+  offlineAlert: boolean;
+  /** Pending SMS queue above alert threshold */
+  queueAlert: boolean;
+  /** Reported versionCode below server minimum */
+  updateRequired: boolean;
+  notes: string | null;
+  siteLabel: string | null;
+  holderName: string | null;
+  simMsisdn: string | null;
+  appVersionName: string | null;
+  appVersionCode: number | null;
+  pendingSmsCount: number;
+  lastSyncAt: string | null;
+  lastError: string | null;
+  lastErrorAt: string | null;
+  smsPermissionOk: boolean | null;
+  syncRequested: boolean;
+  wipeRequested: boolean;
+  pingRequested: boolean;
+  lastPongAt: string | null;
+  /** True while a one-time provision key can still be re-shown */
+  hasPendingProvision: boolean;
   walletNumber?: {
     msisdn: string;
     label: string;
     provider: WalletProvider;
   };
+}
+
+export interface CaptureDeviceActivityItem {
+  id: string;
+  amount: number;
+  currency: string;
+  matchStatus: MatchStatus;
+  senderName: string | null;
+  senderMsisdn: string | null;
+  reference: string | null;
+  rawMessage: string;
+  receivedAt: string;
+  source: DepositSource;
 }
 
 export interface AuditLogDto {

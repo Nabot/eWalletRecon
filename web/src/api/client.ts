@@ -1,4 +1,13 @@
-import type { DepositEventDto, CaptureDeviceDto, AuditLogDto, WalletTotalsDto, TopupRequestDto, DailyCloseoutDto, WalletProvider } from "@ewallet/shared";
+import type {
+  DepositEventDto,
+  CaptureDeviceDto,
+  CaptureDeviceActivityItem,
+  AuditLogDto,
+  WalletTotalsDto,
+  TopupRequestDto,
+  DailyCloseoutDto,
+  WalletProvider,
+} from "@ewallet/shared";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "";
 
@@ -61,7 +70,12 @@ export const api = {
 
   devices: (token: string) => request<CaptureDeviceDto[]>("/api/devices", token),
 
-  createDevice: (token: string, name: string, walletNumberId: string) =>
+  createDevice: (
+    token: string,
+    name: string,
+    walletNumberId: string,
+    extras?: { siteLabel?: string; holderName?: string; simMsisdn?: string; notes?: string }
+  ) =>
     request<{
       id: string;
       name: string;
@@ -71,7 +85,24 @@ export const api = {
       provisionQrPayload: string;
     }>("/api/devices", token, {
       method: "POST",
-      body: JSON.stringify({ name, walletNumberId }),
+      body: JSON.stringify({ name, walletNumberId, ...extras }),
+    }),
+
+  updateDevice: (
+    token: string,
+    id: string,
+    patch: {
+      name?: string;
+      siteLabel?: string | null;
+      holderName?: string | null;
+      simMsisdn?: string | null;
+      notes?: string | null;
+      walletNumberId?: string;
+    }
+  ) =>
+    request<CaptureDeviceDto>(`/api/devices/${id}`, token, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
     }),
 
   renameDevice: (token: string, id: string, name: string) =>
@@ -89,6 +120,31 @@ export const api = {
       provision: { v: number; apiBase: string; apiKey: string };
       provisionQrPayload: string;
     }>(`/api/devices/${id}/rotate-key`, token, { method: "POST" }),
+
+  showDeviceProvision: (token: string, id: string) =>
+    request<{
+      id: string;
+      name: string;
+      walletNumberId: string;
+      apiKey: string;
+      provision: { v: number; apiBase: string; apiKey: string };
+      provisionQrPayload: string;
+    }>(`/api/devices/${id}/provision`, token),
+
+  forceDeviceSync: (token: string, id: string) =>
+    request<CaptureDeviceDto>(`/api/devices/${id}/force-sync`, token, { method: "POST" }),
+
+  pingDevice: (token: string, id: string) =>
+    request<CaptureDeviceDto>(`/api/devices/${id}/ping`, token, { method: "POST" }),
+
+  wipeDevice: (token: string, id: string) =>
+    request<CaptureDeviceDto>(`/api/devices/${id}/wipe`, token, { method: "POST" }),
+
+  deviceActivity: (token: string, id: string, limit = 8) =>
+    request<CaptureDeviceActivityItem[]>(`/api/devices/${id}/activity?limit=${limit}`, token),
+
+  deviceAudit: (token: string, id: string, limit = 12) =>
+    request<AuditLogDto[]>(`/api/devices/${id}/audit?limit=${limit}`, token),
 
   revokeDevice: (token: string, id: string) =>
     request<{ ok: true; id: string }>(`/api/devices/${id}`, token, { method: "DELETE" }),

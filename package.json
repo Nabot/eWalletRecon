@@ -2,7 +2,7 @@
   "name": "ewallet-recon",
   "version": "1.0.0",
   "private": true,
-  "description": "E-Wallet Deposit Reconciliation System for Namibian betting",
+  "description": "WalletRecon — e-wallet deposit reconciliation for Namibian betting",
   "workspaces": [
     "backend",
     "web",

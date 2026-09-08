@@ -19,7 +19,7 @@ app.use(
 app.use(express.json({ limit: "1mb" }));
 
 app.get("/health", (_req, res) => {
-  res.json({ ok: true, service: "ewallet-recon-api", time: new Date().toISOString() });
+  res.json({ ok: true, service: "walletrecon-api", time: new Date().toISOString() });
 });
 
 app.use("/api/auth", authRouter);

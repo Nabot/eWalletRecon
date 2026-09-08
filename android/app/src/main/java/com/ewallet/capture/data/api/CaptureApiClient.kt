@@ -8,6 +8,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.time.Instant
 import java.util.concurrent.TimeUnit
+import com.ewallet.capture.BuildConfig
 
 data class QueuedSms(
     val idempotencyKey: String,
@@ -16,11 +17,30 @@ data class QueuedSms(
     val receivedAtEpochMs: Long,
 )
 
+data class HeartbeatCommands(
+    val forceSync: Boolean = false,
+    val wipe: Boolean = false,
+    val pong: Boolean = false,
+)
+
 data class HeartbeatResult(
     val ok: Boolean,
     val httpCode: Int,
     val offlineAfterMinutes: Long? = null,
+    val minVersionCode: Int? = null,
+    val commands: HeartbeatCommands = HeartbeatCommands(),
     val errorBody: String? = null,
+)
+
+data class HeartbeatTelemetry(
+    val appVersionName: String,
+    val appVersionCode: Int,
+    val pendingSmsCount: Int,
+    val lastSyncAtEpochMs: Long,
+    val lastError: String,
+    val lastErrorAtEpochMs: Long,
+    val smsPermissionOk: Boolean,
+    val pong: Boolean = false,
 )
 
 class CaptureApiClient(
@@ -34,21 +54,60 @@ class CaptureApiClient(
 
     private val json = "application/json; charset=utf-8".toMediaType()
 
-    fun heartbeat(): HeartbeatResult {
+    fun heartbeat(telemetry: HeartbeatTelemetry = HeartbeatTelemetry(
+        appVersionName = BuildConfig.VERSION_NAME,
+        appVersionCode = BuildConfig.VERSION_CODE,
+        pendingSmsCount = 0,
+        lastSyncAtEpochMs = 0L,
+        lastError = "",
+        lastErrorAtEpochMs = 0L,
+        smsPermissionOk = true,
+        pong = false,
+    )): HeartbeatResult {
+        val payload = JSONObject()
+            .put("appVersionName", telemetry.appVersionName)
+            .put("appVersionCode", telemetry.appVersionCode)
+            .put("pendingSmsCount", telemetry.pendingSmsCount)
+            .put("smsPermissionOk", telemetry.smsPermissionOk)
+        if (telemetry.lastSyncAtEpochMs > 0L) {
+            payload.put("lastSyncAt", Instant.ofEpochMilli(telemetry.lastSyncAtEpochMs).toString())
+        } else {
+            payload.put("lastSyncAt", JSONObject.NULL)
+        }
+        if (telemetry.lastError.isNotBlank()) {
+            payload.put("lastError", telemetry.lastError.take(400))
+            if (telemetry.lastErrorAtEpochMs > 0L) {
+                payload.put("lastErrorAt", Instant.ofEpochMilli(telemetry.lastErrorAtEpochMs).toString())
+            }
+        } else {
+            payload.put("lastError", JSONObject.NULL)
+            payload.put("lastErrorAt", JSONObject.NULL)
+        }
+        if (telemetry.pong) payload.put("pong", true)
+
         val req = Request.Builder()
             .url(trimSlash(baseUrl) + "/api/capture/heartbeat")
             .header("X-Api-Key", apiKey)
-            .post("{}".toRequestBody(json))
+            .post(payload.toString().toRequestBody(json))
             .build()
         client.newCall(req).execute().use { res ->
             val body = res.body?.string().orEmpty()
             if (!res.isSuccessful) {
                 return HeartbeatResult(false, res.code, errorBody = body.take(200))
             }
-            val offline = runCatching {
-                JSONObject(body).optLong("offlineAfterMinutes").takeIf { it > 0 }
-            }.getOrNull()
-            return HeartbeatResult(true, res.code, offlineAfterMinutes = offline)
+            val obj = runCatching { JSONObject(body) }.getOrNull()
+            val commands = obj?.optJSONObject("commands")
+            return HeartbeatResult(
+                ok = true,
+                httpCode = res.code,
+                offlineAfterMinutes = obj?.optLong("offlineAfterMinutes")?.takeIf { it > 0 },
+                minVersionCode = obj?.optInt("minVersionCode")?.takeIf { it > 0 },
+                commands = HeartbeatCommands(
+                    forceSync = commands?.optBoolean("forceSync") == true,
+                    wipe = commands?.optBoolean("wipe") == true,
+                    pong = commands?.optBoolean("pong") == true,
+                ),
+            )
         }
     }
 
@@ -85,7 +144,6 @@ class CaptureApiClient(
             .build()
         client.newCall(req).execute().use { res ->
             if (!res.isSuccessful) throw IllegalStateException("Sync failed HTTP ${res.code}")
-            // On success, all keys in batch are safe to drop (server is idempotent)
             return batch.map { it.idempotencyKey }
         }
     }

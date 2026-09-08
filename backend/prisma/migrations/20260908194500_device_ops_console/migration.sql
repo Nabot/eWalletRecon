@@ -1,0 +1,18 @@
+-- AlterTable
+ALTER TABLE `CaptureDevice`
+  ADD COLUMN `notes` TEXT NULL,
+  ADD COLUMN `siteLabel` VARCHAR(191) NULL,
+  ADD COLUMN `holderName` VARCHAR(191) NULL,
+  ADD COLUMN `simMsisdn` VARCHAR(191) NULL,
+  ADD COLUMN `appVersionName` VARCHAR(191) NULL,
+  ADD COLUMN `appVersionCode` INTEGER NULL,
+  ADD COLUMN `pendingSmsCount` INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN `lastSyncAt` DATETIME(3) NULL,
+  ADD COLUMN `lastError` TEXT NULL,
+  ADD COLUMN `lastErrorAt` DATETIME(3) NULL,
+  ADD COLUMN `smsPermissionOk` BOOLEAN NULL,
+  ADD COLUMN `syncRequestedAt` DATETIME(3) NULL,
+  ADD COLUMN `wipeRequestedAt` DATETIME(3) NULL,
+  ADD COLUMN `pingRequestedAt` DATETIME(3) NULL,
+  ADD COLUMN `lastPongAt` DATETIME(3) NULL,
+  ADD COLUMN `pendingApiKey` TEXT NULL;

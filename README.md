@@ -1,4 +1,4 @@
-# E-Wallet Deposit Reconciliation System
+# WalletRecon
 
 Full-stack system for a Namibian betting company to capture e-wallet deposit SMS, match them to user top-up requests, and credit betting accounts.
 

@@ -26,6 +26,8 @@ object PrefKeys {
     val INBOX_WATERMARK_MS = longPreferencesKey("inbox_watermark_ms")
     val CATCHUP_POLICY_V = longPreferencesKey("catchup_policy_v")
     val SENDER_IDS = stringPreferencesKey("sender_ids")
+    val MIN_VERSION_CODE = longPreferencesKey("min_version_code")
+    val PONG_REQUESTED = longPreferencesKey("pong_requested")
     // Legacy plaintext keys — migrated once into SecureStore then removed
     val LEGACY_API_BASE = stringPreferencesKey("api_base")
     val LEGACY_API_KEY = stringPreferencesKey("api_key")
@@ -185,6 +187,28 @@ class Prefs(private val context: Context) {
             it.remove(PrefKeys.LAST_ERROR)
             it.remove(PrefKeys.LAST_ERROR_MS)
         }
+    }
+
+    suspend fun setMinVersionCode(code: Int?) {
+        if (code == null || code <= 0) return
+        context.dataStore.edit { it[PrefKeys.MIN_VERSION_CODE] = code.toLong() }
+    }
+
+    val minVersionCode: Flow<Int> = context.dataStore.data.map {
+        (it[PrefKeys.MIN_VERSION_CODE] ?: 0L).toInt()
+    }
+
+    /** Server asked for a pong on the next heartbeat. */
+    suspend fun markPongRequested() {
+        context.dataStore.edit { it[PrefKeys.PONG_REQUESTED] = 1L }
+    }
+
+    suspend fun consumePongRequest(): Boolean {
+        val flagged = context.dataStore.data.map { (it[PrefKeys.PONG_REQUESTED] ?: 0L) > 0L }.first()
+        if (flagged) {
+            context.dataStore.edit { it.remove(PrefKeys.PONG_REQUESTED) }
+        }
+        return flagged
     }
 
     suspend fun setInboxWatermarkMs(ms: Long) {

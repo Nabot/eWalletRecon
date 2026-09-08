@@ -9,6 +9,7 @@ import { writeAuditLog } from "../lib/audit";
 import { toNumber } from "../lib/money";
 import { config } from "../config/env";
 import { generateApiKey, generateRefCode, hashApiKey } from "../lib/crypto";
+import { toDeviceDto } from "../services/devices/deviceDto";
 
 export const apiRouter = Router();
 apiRouter.use(requireStaff);
@@ -334,7 +335,6 @@ apiRouter.post("/topups", async (req, res) => {
 
 // --- Devices & wallets ---
 apiRouter.get("/devices", async (_req, res) => {
-  const offlineMs = config.deviceOfflineMinutes * 60 * 1000;
   const now = Date.now();
   const devices = await prisma.captureDevice.findMany({
     include: {
@@ -342,16 +342,8 @@ apiRouter.get("/devices", async (_req, res) => {
     },
     orderBy: { name: "asc" },
   });
-  res.json(
-    devices.map((d) => ({
-      id: d.id,
-      name: d.name,
-      walletNumberId: d.walletNumberId,
-      lastSeenAt: d.lastSeenAt?.toISOString() ?? null,
-      online: d.lastSeenAt != null && now - d.lastSeenAt.getTime() < offlineMs,
-      walletNumber: d.walletNumber,
-    }))
-  );
+  const dtos = devices.map((d) => toDeviceDto(d, now));
+  res.json(dtos);
 });
 
 apiRouter.get("/wallets", async (_req, res) => {
@@ -362,9 +354,29 @@ apiRouter.get("/wallets", async (_req, res) => {
   res.json(wallets);
 });
 
+function provisionPayload(apiKey: string) {
+  const provision = {
+    v: 1 as const,
+    apiBase: config.publicApiBaseUrl,
+    apiKey,
+  };
+  return {
+    apiKey,
+    provision,
+    provisionQrPayload: JSON.stringify(provision),
+  };
+}
+
 apiRouter.post("/devices", requireRole("ADMIN"), async (req, res) => {
   const body = z
-    .object({ name: z.string().min(1), walletNumberId: z.string() })
+    .object({
+      name: z.string().min(1),
+      walletNumberId: z.string(),
+      siteLabel: z.string().max(120).optional(),
+      holderName: z.string().max(120).optional(),
+      simMsisdn: z.string().max(32).optional(),
+      notes: z.string().max(2000).optional(),
+    })
     .safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: body.error.flatten() });
 
@@ -383,6 +395,11 @@ apiRouter.post("/devices", requireRole("ADMIN"), async (req, res) => {
       name: body.data.name,
       walletNumberId: body.data.walletNumberId,
       apiKeyHash: hashApiKey(apiKey),
+      pendingApiKey: apiKey,
+      siteLabel: body.data.siteLabel?.trim() || null,
+      holderName: body.data.holderName?.trim() || null,
+      simMsisdn: body.data.simMsisdn?.trim() || null,
+      notes: body.data.notes?.trim() || null,
     },
   });
   await prisma.walletNumber.update({
@@ -398,66 +415,136 @@ apiRouter.post("/devices", requireRole("ADMIN"), async (req, res) => {
     entityId: device.id,
   });
 
-  const provision = {
-    v: 1 as const,
-    apiBase: config.publicApiBaseUrl,
-    apiKey,
-  };
-
-  // apiKey + provision shown once — never stored in plaintext
   res.status(201).json({
     id: device.id,
     name: device.name,
     walletNumberId: device.walletNumberId,
     createdAt: device.createdAt.toISOString(),
-    apiKey,
-    provision,
-    provisionQrPayload: JSON.stringify(provision),
+    ...provisionPayload(apiKey),
   });
 });
 
 apiRouter.patch("/devices/:id", requireRole("ADMIN"), async (req, res) => {
-  const body = z.object({ name: z.string().min(1).max(120) }).safeParse(req.body);
+  const body = z
+    .object({
+      name: z.string().min(1).max(120).optional(),
+      siteLabel: z.string().max(120).nullable().optional(),
+      holderName: z.string().max(120).nullable().optional(),
+      simMsisdn: z.string().max(32).nullable().optional(),
+      notes: z.string().max(2000).nullable().optional(),
+      walletNumberId: z.string().optional(),
+    })
+    .safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: body.error.flatten() });
+  if (Object.keys(body.data).length === 0) {
+    return res.status(400).json({ error: "No fields to update" });
+  }
 
   const existing = await prisma.captureDevice.findUnique({ where: { id: req.params.id } });
   if (!existing) return res.status(404).json({ error: "Device not found" });
 
-  const name = body.data.name.trim();
-  const device = await prisma.captureDevice.update({
-    where: { id: existing.id },
-    data: { name },
-  });
-  await prisma.walletNumber.update({
-    where: { id: device.walletNumberId },
-    data: { deviceId: name },
-  });
+  const data: Prisma.CaptureDeviceUpdateInput = {};
+  if (body.data.name !== undefined) data.name = body.data.name.trim();
+  if (body.data.siteLabel !== undefined) data.siteLabel = body.data.siteLabel?.trim() || null;
+  if (body.data.holderName !== undefined) data.holderName = body.data.holderName?.trim() || null;
+  if (body.data.simMsisdn !== undefined) data.simMsisdn = body.data.simMsisdn?.trim() || null;
+  if (body.data.notes !== undefined) data.notes = body.data.notes?.trim() || null;
 
-  await writeAuditLog({
-    actorType: "STAFF",
-    actorId: req.staff!.staffId,
-    action: "DEVICE_RENAMED",
-    entityType: "CaptureDevice",
-    entityId: device.id,
-    metadata: { previousName: existing.name, name },
-  });
+  if (body.data.walletNumberId && body.data.walletNumberId !== existing.walletNumberId) {
+    const target = await prisma.walletNumber.findUnique({
+      where: { id: body.data.walletNumberId },
+      include: { device: { select: { id: true } } },
+    });
+    if (!target) return res.status(404).json({ error: "Wallet not found" });
+    if (target.device && target.device.id !== existing.id) {
+      return res.status(409).json({ error: "Target wallet already has a capture phone" });
+    }
+    const nextName = (body.data.name ?? existing.name).trim();
+    await prisma.$transaction(async (tx) => {
+      await tx.walletNumber.update({
+        where: { id: existing.walletNumberId },
+        data: { deviceId: null },
+      });
+      await tx.captureDevice.update({
+        where: { id: existing.id },
+        data: {
+          name: nextName,
+          siteLabel:
+            body.data.siteLabel !== undefined
+              ? body.data.siteLabel?.trim() || null
+              : undefined,
+          holderName:
+            body.data.holderName !== undefined
+              ? body.data.holderName?.trim() || null
+              : undefined,
+          simMsisdn:
+            body.data.simMsisdn !== undefined
+              ? body.data.simMsisdn?.trim() || null
+              : undefined,
+          notes:
+            body.data.notes !== undefined ? body.data.notes?.trim() || null : undefined,
+          walletNumberId: target.id,
+        },
+      });
+      await tx.walletNumber.update({
+        where: { id: target.id },
+        data: { deviceId: nextName },
+      });
+    });
+    await writeAuditLog({
+      actorType: "STAFF",
+      actorId: req.staff!.staffId,
+      action: "DEVICE_REBOUND",
+      entityType: "CaptureDevice",
+      entityId: existing.id,
+      metadata: {
+        previousWalletNumberId: existing.walletNumberId,
+        walletNumberId: target.id,
+      },
+    });
+  } else {
+    const device = await prisma.captureDevice.update({
+      where: { id: existing.id },
+      data,
+    });
+    if (body.data.name) {
+      await prisma.walletNumber.update({
+        where: { id: device.walletNumberId },
+        data: { deviceId: device.name },
+      });
+    }
+    if (body.data.name && body.data.name.trim() !== existing.name) {
+      await writeAuditLog({
+        actorType: "STAFF",
+        actorId: req.staff!.staffId,
+        action: "DEVICE_RENAMED",
+        entityType: "CaptureDevice",
+        entityId: device.id,
+        metadata: { previousName: existing.name, name: device.name },
+      });
+    } else if (
+      body.data.siteLabel !== undefined ||
+      body.data.holderName !== undefined ||
+      body.data.simMsisdn !== undefined ||
+      body.data.notes !== undefined
+    ) {
+      await writeAuditLog({
+        actorType: "STAFF",
+        actorId: req.staff!.staffId,
+        action: "DEVICE_NOTES_UPDATED",
+        entityType: "CaptureDevice",
+        entityId: existing.id,
+      });
+    }
+  }
 
-  const offlineMs = config.deviceOfflineMinutes * 60 * 1000;
-  const now = Date.now();
   const withWallet = await prisma.captureDevice.findUniqueOrThrow({
-    where: { id: device.id },
+    where: { id: existing.id },
     include: {
       walletNumber: { select: { msisdn: true, label: true, provider: true } },
     },
   });
-  res.json({
-    id: withWallet.id,
-    name: withWallet.name,
-    walletNumberId: withWallet.walletNumberId,
-    lastSeenAt: withWallet.lastSeenAt?.toISOString() ?? null,
-    online: withWallet.lastSeenAt != null && now - withWallet.lastSeenAt.getTime() < offlineMs,
-    walletNumber: withWallet.walletNumber,
-  });
+  res.json(toDeviceDto(withWallet));
 });
 
 apiRouter.post("/devices/:id/rotate-key", requireRole("ADMIN"), async (req, res) => {
@@ -467,7 +554,11 @@ apiRouter.post("/devices/:id/rotate-key", requireRole("ADMIN"), async (req, res)
   const apiKey = generateApiKey();
   const device = await prisma.captureDevice.update({
     where: { id: existing.id },
-    data: { apiKeyHash: hashApiKey(apiKey), lastSeenAt: null },
+    data: {
+      apiKeyHash: hashApiKey(apiKey),
+      pendingApiKey: apiKey,
+      lastSeenAt: null,
+    },
   });
 
   await writeAuditLog({
@@ -478,20 +569,143 @@ apiRouter.post("/devices/:id/rotate-key", requireRole("ADMIN"), async (req, res)
     entityId: device.id,
   });
 
-  const provision = {
-    v: 1 as const,
-    apiBase: config.publicApiBaseUrl,
-    apiKey,
-  };
-
   res.json({
     id: device.id,
     name: device.name,
     walletNumberId: device.walletNumberId,
-    apiKey,
-    provision,
-    provisionQrPayload: JSON.stringify(provision),
+    ...provisionPayload(apiKey),
   });
+});
+
+/** Re-show provision QR while pendingApiKey is still set (before first heartbeat). */
+apiRouter.get("/devices/:id/provision", requireRole("ADMIN"), async (req, res) => {
+  const device = await prisma.captureDevice.findUnique({ where: { id: req.params.id } });
+  if (!device) return res.status(404).json({ error: "Device not found" });
+  if (!device.pendingApiKey) {
+    return res.status(410).json({
+      error: "Provision key no longer available — rotate key to issue a new QR",
+    });
+  }
+  res.json({
+    id: device.id,
+    name: device.name,
+    walletNumberId: device.walletNumberId,
+    ...provisionPayload(device.pendingApiKey),
+  });
+});
+
+apiRouter.post("/devices/:id/force-sync", requireRole("ADMIN"), async (req, res) => {
+  const existing = await prisma.captureDevice.findUnique({
+    where: { id: req.params.id },
+    include: { walletNumber: { select: { msisdn: true, label: true, provider: true } } },
+  });
+  if (!existing) return res.status(404).json({ error: "Device not found" });
+  const device = await prisma.captureDevice.update({
+    where: { id: existing.id },
+    data: { syncRequestedAt: new Date() },
+    include: { walletNumber: { select: { msisdn: true, label: true, provider: true } } },
+  });
+  await writeAuditLog({
+    actorType: "STAFF",
+    actorId: req.staff!.staffId,
+    action: "DEVICE_FORCE_SYNC",
+    entityType: "CaptureDevice",
+    entityId: device.id,
+  });
+  res.json(toDeviceDto(device));
+});
+
+apiRouter.post("/devices/:id/ping", requireRole("ADMIN"), async (req, res) => {
+  const existing = await prisma.captureDevice.findUnique({
+    where: { id: req.params.id },
+    include: { walletNumber: { select: { msisdn: true, label: true, provider: true } } },
+  });
+  if (!existing) return res.status(404).json({ error: "Device not found" });
+  const device = await prisma.captureDevice.update({
+    where: { id: existing.id },
+    data: { pingRequestedAt: new Date() },
+    include: { walletNumber: { select: { msisdn: true, label: true, provider: true } } },
+  });
+  await writeAuditLog({
+    actorType: "STAFF",
+    actorId: req.staff!.staffId,
+    action: "DEVICE_PING",
+    entityType: "CaptureDevice",
+    entityId: device.id,
+  });
+  res.json(toDeviceDto(device));
+});
+
+apiRouter.post("/devices/:id/wipe", requireRole("ADMIN"), async (req, res) => {
+  const existing = await prisma.captureDevice.findUnique({
+    where: { id: req.params.id },
+    include: { walletNumber: { select: { msisdn: true, label: true, provider: true } } },
+  });
+  if (!existing) return res.status(404).json({ error: "Device not found" });
+
+  // Only flag wipe — key rotates when the phone receives the command on heartbeat
+  // so the current sealed key can still authenticate once.
+  const device = await prisma.captureDevice.update({
+    where: { id: existing.id },
+    data: { wipeRequestedAt: new Date() },
+    include: { walletNumber: { select: { msisdn: true, label: true, provider: true } } },
+  });
+  await writeAuditLog({
+    actorType: "STAFF",
+    actorId: req.staff!.staffId,
+    action: "DEVICE_WIPE_REQUESTED",
+    entityType: "CaptureDevice",
+    entityId: device.id,
+  });
+  res.json(toDeviceDto(device));
+});
+
+apiRouter.get("/devices/:id/activity", async (req, res) => {
+  const device = await prisma.captureDevice.findUnique({ where: { id: req.params.id } });
+  if (!device) return res.status(404).json({ error: "Device not found" });
+  const take = Math.min(Number(req.query.limit ?? 8), 30);
+  const events = await prisma.depositEvent.findMany({
+    where: { walletNumberId: device.walletNumberId },
+    orderBy: { receivedAt: "desc" },
+    take,
+  });
+  res.json(
+    events.map((e) => ({
+      id: e.id,
+      amount: toNumber(e.amount),
+      currency: e.currency,
+      matchStatus: e.matchStatus,
+      senderName: e.senderName,
+      senderMsisdn: e.senderMsisdn,
+      reference: e.reference,
+      rawMessage: e.rawMessage,
+      receivedAt: e.receivedAt.toISOString(),
+      source: e.source,
+    }))
+  );
+});
+
+apiRouter.get("/devices/:id/audit", async (req, res) => {
+  const device = await prisma.captureDevice.findUnique({ where: { id: req.params.id } });
+  if (!device) return res.status(404).json({ error: "Device not found" });
+  const take = Math.min(Number(req.query.limit ?? 15), 50);
+  const logs = await prisma.auditLog.findMany({
+    where: { entityType: "CaptureDevice", entityId: device.id },
+    orderBy: { createdAt: "desc" },
+    take,
+  });
+  res.json(
+    logs.map((l) => ({
+      id: l.id,
+      actorType: l.actorType,
+      actorId: l.actorId,
+      action: l.action,
+      entityType: l.entityType,
+      entityId: l.entityId,
+      metadata: (l.metadata as Record<string, unknown> | null) ?? null,
+      createdAt: l.createdAt.toISOString(),
+    }))
+  );
 });
 
 apiRouter.delete("/devices/:id", requireRole("ADMIN"), async (req, res) => {

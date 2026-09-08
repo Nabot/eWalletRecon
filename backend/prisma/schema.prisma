@@ -66,6 +66,30 @@ model CaptureDevice {
   walletNumberId String    @unique
   lastSeenAt     DateTime?
 
+  /// Ops notes shown on the Phones page
+  notes       String? @db.Text
+  siteLabel   String?
+  holderName  String?
+  simMsisdn   String?
+
+  /// Telemetry from the handset (via heartbeat)
+  appVersionName  String?
+  appVersionCode  Int?
+  pendingSmsCount Int       @default(0)
+  lastSyncAt      DateTime?
+  lastError       String?   @db.Text
+  lastErrorAt     DateTime?
+  smsPermissionOk Boolean?
+
+  /// Admin → phone commands (cleared when delivered / acknowledged)
+  syncRequestedAt DateTime?
+  wipeRequestedAt DateTime?
+  pingRequestedAt DateTime?
+  lastPongAt      DateTime?
+
+  /// Plaintext key kept until first successful heartbeat (or rotate) so QR can be re-shown
+  pendingApiKey String? @db.Text
+
   walletNumber WalletNumber @relation(fields: [walletNumberId], references: [id])
 
   createdAt DateTime @default(now())
