@@ -3,6 +3,7 @@ import type {
   CaptureDeviceDto,
   CaptureDeviceActivityItem,
   AuditLogDto,
+  AuditLogListDto,
   WalletTotalsDto,
   TopupRequestDto,
   DailyCloseoutDto,
@@ -39,6 +40,18 @@ export type DepositFilters = {
   limit?: number;
 };
 
+export type AuditFilters = {
+  action?: string;
+  actorType?: string;
+  entityType?: string;
+  entityId?: string;
+  from?: string;
+  to?: string;
+  q?: string;
+  limit?: number;
+  before?: string;
+};
+
 function depositQuery(f: DepositFilters): string {
   const p = new URLSearchParams();
   if (f.status) p.set("status", f.status);
@@ -52,6 +65,21 @@ function depositQuery(f: DepositFilters): string {
   return s ? `?${s}` : "";
 }
 
+function auditQuery(f: AuditFilters): string {
+  const p = new URLSearchParams();
+  if (f.action) p.set("action", f.action);
+  if (f.actorType) p.set("actorType", f.actorType);
+  if (f.entityType) p.set("entityType", f.entityType);
+  if (f.entityId) p.set("entityId", f.entityId);
+  if (f.from) p.set("from", f.from);
+  if (f.to) p.set("to", f.to);
+  if (f.q) p.set("q", f.q);
+  if (f.limit) p.set("limit", String(f.limit));
+  if (f.before) p.set("before", f.before);
+  const s = p.toString();
+  return s ? `?${s}` : "";
+}
+
 export const api = {
   login: (email: string, password: string) =>
     request<{ token: string; staff: { id: string; email: string; role: "ADMIN" | "OPERATOR" } }>(
@@ -59,6 +87,9 @@ export const api = {
       null,
       { method: "POST", body: JSON.stringify({ email, password }) }
     ),
+
+  logout: (token: string) =>
+    request<{ ok: true }>("/api/auth/logout", token, { method: "POST" }),
 
   deposits: (token: string, filters: DepositFilters = {}) =>
     request<DepositEventDto[]>(`/api/deposits${depositQuery(filters)}`, token),
@@ -169,7 +200,11 @@ export const api = {
       token
     ),
 
-  audit: (token: string) => request<AuditLogDto[]>("/api/audit", token),
+  audit: (token: string, filters: AuditFilters = {}) =>
+    request<AuditLogListDto>(`/api/audit${auditQuery({ limit: 100, ...filters })}`, token),
+
+  auditExportCsvUrl: (filters: AuditFilters = {}) =>
+    `${API_URL}/api/audit/export.csv${auditQuery(filters)}`,
 
   topups: (token: string, q?: string, status = "AWAITING") =>
     request<TopupRequestDto[]>(

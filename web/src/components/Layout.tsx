@@ -148,7 +148,16 @@ export default function Layout() {
                   role="menuitem"
                   onClick={() => {
                     setMenuOpen(false);
-                    logout();
+                    void (async () => {
+                      if (token) {
+                        try {
+                          await api.logout(token);
+                        } catch {
+                          /* still clear local session */
+                        }
+                      }
+                      logout();
+                    })();
                   }}
                   className="w-full rounded-md px-2 py-2 text-left text-sm font-sans hover:bg-ink-800"
                 >

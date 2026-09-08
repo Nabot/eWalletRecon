@@ -5,11 +5,12 @@ import { prisma } from "../lib/prisma";
 import { requireStaff, requireRole } from "../middleware/auth";
 import { markDepositCredited, uncreditDeposit } from "../services/matching/manualCredit";
 import { parseSmsWithFallback } from "../services/parsers";
-import { writeAuditLog } from "../lib/audit";
+import { attachActorLabels, buildAuditWhere, writeAuditLog } from "../lib/audit";
 import { toNumber } from "../lib/money";
 import { config } from "../config/env";
 import { generateApiKey, generateRefCode, hashApiKey } from "../lib/crypto";
 import { toDeviceDto } from "../services/devices/deviceDto";
+import type { ActorType } from "@prisma/client";
 
 export const apiRouter = Router();
 apiRouter.use(requireStaff);
@@ -69,6 +70,7 @@ apiRouter.get("/deposits", async (req, res) => {
   if (q) {
     // MySQL: no Prisma `mode: "insensitive"` (Postgres-only). utf8mb4_unicode_ci is CI by default.
     where.OR = [
+      { id: { equals: q } },
       { creditBetAccountId: { contains: q } },
       { creditNote: { contains: q } },
       { reference: { contains: q } },
@@ -694,18 +696,7 @@ apiRouter.get("/devices/:id/audit", async (req, res) => {
     orderBy: { createdAt: "desc" },
     take,
   });
-  res.json(
-    logs.map((l) => ({
-      id: l.id,
-      actorType: l.actorType,
-      actorId: l.actorId,
-      action: l.action,
-      entityType: l.entityType,
-      entityId: l.entityId,
-      metadata: (l.metadata as Record<string, unknown> | null) ?? null,
-      createdAt: l.createdAt.toISOString(),
-    }))
-  );
+  res.json(await attachActorLabels(logs));
 });
 
 apiRouter.delete("/devices/:id", requireRole("ADMIN"), async (req, res) => {
@@ -726,7 +717,11 @@ apiRouter.delete("/devices/:id", requireRole("ADMIN"), async (req, res) => {
     action: "DEVICE_REVOKED",
     entityType: "CaptureDevice",
     entityId: existing.id,
-    metadata: { name: existing.name, walletNumberId: existing.walletNumberId },
+    metadata: {
+      name: existing.name,
+      deviceName: existing.name,
+      walletNumberId: existing.walletNumberId,
+    },
   });
 
   res.json({ ok: true, id: existing.id });
@@ -825,42 +820,92 @@ apiRouter.get("/reports/daily-closeout", async (req, res) => {
 });
 
 // --- Audit ---
+function parseAuditFilters(query: Record<string, unknown>) {
+  const actorTypeRaw = String(query.actorType ?? "").toUpperCase();
+  const actorType =
+    actorTypeRaw === "STAFF" || actorTypeRaw === "DEVICE" || actorTypeRaw === "SYSTEM"
+      ? (actorTypeRaw as ActorType)
+      : undefined;
+
+  return {
+    action: String(query.action ?? "").trim() || undefined,
+    actorType,
+    actorId: String(query.actorId ?? "").trim() || undefined,
+    entityType: String(query.entityType ?? "").trim() || undefined,
+    entityId: String(query.entityId ?? "").trim() || undefined,
+    from: query.from ? new Date(String(query.from)) : null,
+    to: query.to ? new Date(String(query.to)) : null,
+    before: query.before ? new Date(String(query.before)) : null,
+    q: String(query.q ?? "").trim() || undefined,
+  };
+}
+
 apiRouter.get("/audit", async (req, res) => {
-  const take = Math.min(Number(req.query.limit ?? 100), 500);
+  const take = Math.min(Math.max(Number(req.query.limit ?? 100) || 100, 1), 500);
+  const filters = parseAuditFilters(req.query as Record<string, unknown>);
+  const where = buildAuditWhere(filters);
+
   const logs = await prisma.auditLog.findMany({
+    where,
+    orderBy: { createdAt: "desc" },
+    take: take + 1,
+  });
+
+  const hasMore = logs.length > take;
+  const page = hasMore ? logs.slice(0, take) : logs;
+  const items = await attachActorLabels(page);
+  const nextBefore = hasMore ? page[page.length - 1]!.createdAt.toISOString() : null;
+
+  res.json({ items, nextBefore });
+});
+
+apiRouter.get("/audit/export.csv", async (req, res) => {
+  const take = Math.min(Math.max(Number(req.query.limit ?? 5000) || 5000, 1), 10_000);
+  const filters = parseAuditFilters(req.query as Record<string, unknown>);
+  // Export ignores pagination cursor
+  const { before: _before, ...exportFilters } = filters;
+  const where = buildAuditWhere(exportFilters);
+
+  const logs = await prisma.auditLog.findMany({
+    where,
     orderBy: { createdAt: "desc" },
     take,
   });
+  const items = await attachActorLabels(logs);
 
-  const staffIds = [...new Set(logs.filter((l) => l.actorType === "STAFF").map((l) => l.actorId))];
-  const deviceIds = [...new Set(logs.filter((l) => l.actorType === "DEVICE").map((l) => l.actorId))];
+  const esc = (v: string | number | null | undefined) => {
+    const s = v == null ? "" : String(v);
+    return `"${s.replace(/"/g, '""')}"`;
+  };
 
-  const [staffRows, deviceRows] = await Promise.all([
-    staffIds.length
-      ? prisma.staffUser.findMany({ where: { id: { in: staffIds } }, select: { id: true, email: true } })
-      : Promise.resolve([]),
-    deviceIds.length
-      ? prisma.captureDevice.findMany({ where: { id: { in: deviceIds } }, select: { id: true, name: true } })
-      : Promise.resolve([]),
-  ]);
+  const header = [
+    "createdAt",
+    "actorType",
+    "actorLabel",
+    "actorId",
+    "action",
+    "entityType",
+    "entityId",
+    "metadata",
+  ].join(",");
 
-  const staffMap = new Map(staffRows.map((s) => [s.id, s.email]));
-  const deviceMap = new Map(deviceRows.map((d) => [d.id, d.name]));
-
-  res.json(
-    logs.map((l) => ({
-      ...l,
-      createdAt: l.createdAt.toISOString(),
-      actorLabel:
-        l.actorType === "STAFF"
-          ? staffMap.get(l.actorId) ?? "Staff"
-          : l.actorType === "DEVICE"
-            ? deviceMap.get(l.actorId) ?? "Device"
-            : l.actorType === "SYSTEM"
-              ? "System"
-              : null,
-    }))
+  const rows = items.map((l) =>
+    [
+      esc(l.createdAt),
+      esc(l.actorType),
+      esc(l.actorLabel),
+      esc(l.actorId),
+      esc(l.action),
+      esc(l.entityType),
+      esc(l.entityId),
+      esc(l.metadata ? JSON.stringify(l.metadata) : ""),
+    ].join(",")
   );
+
+  const day = new Date().toISOString().slice(0, 10);
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="ewallet-audit-${day}.csv"`);
+  res.send([header, ...rows].join("\n"));
 });
 
 // --- Admin: reparse stored raw messages ---

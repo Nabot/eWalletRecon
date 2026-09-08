@@ -16,7 +16,17 @@ authRouter.post("/login", async (req, res) => {
   if (!body.success) return res.status(400).json({ error: body.error.flatten() });
 
   const staff = await prisma.staffUser.findUnique({ where: { email: body.data.email } });
-  if (!staff || !(await bcrypt.compare(body.data.password, staff.passwordHash))) {
+  const passwordOk = staff ? await bcrypt.compare(body.data.password, staff.passwordHash) : false;
+
+  if (!staff || !passwordOk) {
+    await writeAuditLog({
+      actorType: staff ? "STAFF" : "SYSTEM",
+      actorId: staff?.id ?? "anonymous",
+      action: "STAFF_LOGIN_FAILED",
+      entityType: "StaffUser",
+      entityId: staff?.id ?? "unknown",
+      metadata: { email: body.data.email },
+    });
     return res.status(401).json({ error: "Invalid credentials" });
   }
 
@@ -38,6 +48,17 @@ authRouter.post("/login", async (req, res) => {
     token,
     staff: { id: staff.id, email: staff.email, role: staff.role },
   });
+});
+
+authRouter.post("/logout", requireStaff, async (req, res) => {
+  await writeAuditLog({
+    actorType: "STAFF",
+    actorId: req.staff!.staffId,
+    action: "STAFF_LOGOUT",
+    entityType: "StaffUser",
+    entityId: req.staff!.staffId,
+  });
+  res.json({ ok: true });
 });
 
 authRouter.get("/me", requireStaff, async (req, res) => {

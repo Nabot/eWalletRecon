@@ -188,6 +188,8 @@ model AuditLog {
 
   @@index([createdAt])
   @@index([entityType, entityId])
+  @@index([action, createdAt])
+  @@index([actorType, createdAt])
 }
 
 model StaffUser {

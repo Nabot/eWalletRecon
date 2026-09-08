@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import QRCode from "qrcode";
 import type { CaptureDeviceDto, CaptureDeviceActivityItem, AuditLogDto } from "@ewallet/shared";
@@ -7,7 +7,7 @@ import { api, formatNad } from "../api/client";
 import { useAuth } from "../lib/auth";
 import { useToast } from "../lib/toast";
 import { providerLabel } from "../lib/providers";
-import { auditActionLabel } from "../lib/auditLabels";
+import { auditActionLabel, auditActorLabel } from "../lib/auditLabels";
 
 type ProvisionResult = {
   id: string;
@@ -36,6 +36,7 @@ export default function DevicesPage() {
   const qc = useQueryClient();
   const isAdmin = staff?.role === "ADMIN";
   const registerRef = useRef<HTMLDivElement>(null);
+  const [searchParams] = useSearchParams();
 
   const { data, isLoading } = useQuery({
     queryKey: ["devices"],
@@ -57,6 +58,11 @@ export default function DevicesPage() {
   const [provision, setProvision] = useState<ProvisionResult | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const deviceId = searchParams.get("device");
+    if (deviceId) setExpandedId(deviceId);
+  }, [searchParams]);
 
   const offline = useMemo(() => (data ?? []).filter((d) => d.offlineAlert), [data]);
   const queueAlerts = useMemo(() => (data ?? []).filter((d) => d.queueAlert), [data]);
@@ -97,6 +103,7 @@ export default function DevicesPage() {
       setHolderName("");
       void qc.invalidateQueries({ queryKey: ["devices"] });
       void qc.invalidateQueries({ queryKey: ["wallets"] });
+      void qc.invalidateQueries({ queryKey: ["audit"] });
       await showProvision(res, "created");
       push("Phone registered — scan the QR once on the handset", "success");
     },
@@ -407,6 +414,7 @@ function DeviceCard({
     void qc.invalidateQueries({ queryKey: ["wallets"] });
     void qc.invalidateQueries({ queryKey: ["device-activity", d.id] });
     void qc.invalidateQueries({ queryKey: ["device-audit", d.id] });
+    void qc.invalidateQueries({ queryKey: ["audit"] });
   };
 
   const rename = useMutation({
@@ -635,12 +643,28 @@ function DeviceCard({
             </ul>
           </div>
           <div>
-            <p className="text-sand-50 font-semibold mb-1">Device audit</p>
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <p className="text-sand-50 font-semibold">Device audit</p>
+                <Link
+                to={`/audit?entityType=CaptureDevice&entityId=${encodeURIComponent(d.id)}`}
+                className="text-veld-400 hover:underline"
+              >
+                Full trail
+              </Link>
+            </div>
             <ul className="space-y-1">
               {(audit.data ?? []).map((log: AuditLogDto) => (
-                <li key={log.id} className="flex justify-between gap-2 text-sand-200">
-                  <span>{auditActionLabel(log.action)}</span>
-                  <span className="font-mono shrink-0">{fmtWhen(log.createdAt)}</span>
+                <li key={log.id} className="rounded-md bg-ink-950/80 border border-ink-800 px-2 py-1.5">
+                  <div className="flex justify-between gap-2">
+                    <span className="text-sand-50">{auditActionLabel(log.action)}</span>
+                    <span className="font-mono shrink-0 text-sand-200">{fmtWhen(log.createdAt)}</span>
+                  </div>
+                  <p className="text-sand-200 mt-0.5">
+                    {auditActorLabel(log)}
+                    <span className="text-sand-200/50 font-mono uppercase text-[10px] ml-1.5">
+                      {log.actorType}
+                    </span>
+                  </p>
                 </li>
               ))}
               {(audit.data ?? []).length === 0 && !audit.isLoading && (

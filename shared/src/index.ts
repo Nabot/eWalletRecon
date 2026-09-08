@@ -172,6 +172,12 @@ export interface AuditLogDto {
   createdAt: string;
 }
 
+/** Paginated audit list (`before` cursor = oldest createdAt on the current page). */
+export interface AuditLogListDto {
+  items: AuditLogDto[];
+  nextBefore: string | null;
+}
+
 export interface WalletTotalsDto {
   walletNumberId: string;
   msisdn: string;
@@ -189,4 +195,5 @@ export interface WalletTotalsDto {
 export type RealtimeEvent =
   | { type: "deposit.created"; payload: DepositEventDto }
   | { type: "deposit.updated"; payload: DepositEventDto }
-  | { type: "device.heartbeat"; payload: CaptureDeviceDto };
+  | { type: "device.heartbeat"; payload: CaptureDeviceDto }
+  | { type: "audit.created"; payload: { id: string; action: string } };

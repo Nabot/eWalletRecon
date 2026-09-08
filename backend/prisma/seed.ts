@@ -14,7 +14,7 @@ async function main() {
   await prisma.creditLedger.deleteMany();
   await prisma.depositEvent.deleteMany();
   await prisma.topupRequest.deleteMany();
-  await prisma.auditLog.deleteMany();
+  // AuditLog is append-only — never wipe (DB triggers + Prisma middleware enforce this).
   await prisma.captureDevice.deleteMany();
   await prisma.walletNumber.deleteMany();
   await prisma.user.deleteMany();

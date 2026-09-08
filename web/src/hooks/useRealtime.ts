@@ -92,6 +92,10 @@ export function useRealtime() {
           if (msg.type === "device.heartbeat") {
             void qc.invalidateQueries({ queryKey: ["devices"] });
           }
+          if (msg.type === "audit.created") {
+            void qc.invalidateQueries({ queryKey: ["audit"] });
+            void qc.invalidateQueries({ queryKey: ["device-audit"] });
+          }
         } catch {
           /* ignore */
         }
