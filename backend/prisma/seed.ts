@@ -1,6 +1,7 @@
 import { PrismaClient, WalletProvider, TopupStatus, StaffRole } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
+import { assertSafeToSeed } from "./seedSafety";
 
 const prisma = new PrismaClient();
 
@@ -9,6 +10,9 @@ function hashApiKey(apiKey: string): string {
 }
 
 async function main() {
+  // Hard stop: wipe sample data is for local Docker MySQL only.
+  assertSafeToSeed();
+
   console.log("Seeding database...");
 
   await prisma.creditLedger.deleteMany();

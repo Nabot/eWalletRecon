@@ -16,13 +16,15 @@ npm run dev:backend
 
 ### DigitalOcean Managed MySQL
 
-Use the connection string from the DO control panel, for example:
+Keep production `DATABASE_URL` on the host (Render), not in `backend/.env`.
 
-```env
-DATABASE_URL=mysql://doadmin:PASSWORD@HOST:25060/DEFADB?sslaccept=strict
+If you must migrate from a laptop, set the URL **for that shell only**:
+
+```bash
+DATABASE_URL='mysql://doadmin:PASSWORD@HOST:25060/DEFADB?sslaccept=strict' npm run db:migrate
 ```
 
-Then run migrations against that DB: `npm run db:migrate`.
+**Never** run `npm run db:seed` against production. Seed deletes wallets, deposits, devices, and staff. The script refuses remote hosts and `NODE_ENV=production` unless `ALLOW_DESTRUCTIVE_SEED=I_UNDERSTAND_DELETE_ALL_DATA` is set.
 
 ## Scripts
 
@@ -31,7 +33,7 @@ Then run migrations against that DB: `npm run db:migrate`.
 | `npm run dev` | Watch mode API |
 | `npm test` | Matching engine + SMS parser tests |
 | `npm run db:migrate:dev` | Create/apply migrations |
-| `npm run db:seed` | Sample wallets, users, top-ups, staff |
+| `npm run db:seed` | **Local only** — sample wallets/users (wipes tables) |
 | `npm run db:studio` | Prisma Studio |
 
 ## Auth

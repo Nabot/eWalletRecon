@@ -50,15 +50,14 @@ Production shape:
 ### After API is up
 
 ```bash
-# optional: seed admin + sample wallets (run once)
-# from a machine that can reach DO MySQL, with DATABASE_URL set:
-npm run db:migrate   # also runs on container start
-npm run db:seed
+# Migrations already run on container start (Dockerfile).
+# From a laptop, migrate only — never seed production:
+DATABASE_URL='mysql://USER:PASSWORD@HOST:25060/DB?sslaccept=strict' npm run db:migrate
 ```
 
-Or exec into the running pattern via one-off: clone locally, point `.env` at DO MySQL, run `npm run db:seed`.
+**Do not run `npm run db:seed` against DigitalOcean / Render.** Seed `deleteMany`s wallets, deposits, devices, users, and staff. The script blocks remote hosts unless you deliberately set `ALLOW_DESTRUCTIVE_SEED=I_UNDERSTAND_DELETE_ALL_DATA`.
 
-Seeded login: `admin@example.com` / `admin123` — **change immediately**.
+For a first admin on a fresh empty DB, prefer creating staff via a one-off SQL/`prisma` create (or a future non-destructive bootstrap), not the sample seed.
 
 ## 3. Vercel (web)
 
