@@ -12,8 +12,22 @@ import ConfirmDialog from "../components/ConfirmDialog";
 import { formatSender } from "../lib/sender";
 import { providerLabel } from "../lib/providers";
 
+/** Local calendar YYYY-MM-DD (not UTC — toISOString shifts the day near midnight). */
 function todayInputValue() {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** Inclusive local-day bounds as UTC ISO so the API matches the operator's calendar day. */
+function localDayStartIso(dateStr: string) {
+  return new Date(`${dateStr}T00:00:00`).toISOString();
+}
+
+function localDayEndIso(dateStr: string) {
+  return new Date(`${dateStr}T23:59:59.999`).toISOString();
 }
 
 type ColId = "amount" | "status" | "received" | "provider" | "sender" | "reference" | "wallet" | "action";
@@ -142,8 +156,8 @@ export default function FeedPage() {
       status: status || undefined,
       provider: provider || undefined,
       walletNumberId: walletNumberId || undefined,
-      from: from ? `${from}T00:00:00` : undefined,
-      to: to ? `${to}T23:59:59.999` : undefined,
+      from: from ? localDayStartIso(from) : undefined,
+      to: to ? localDayEndIso(to) : undefined,
       q: qDebounced.trim() || undefined,
       limit: 200,
     }),
@@ -207,27 +221,30 @@ export default function FeedPage() {
 
   function onStatusChange(next: string) {
     setStatus(next);
+    // Pending clears dates so the full credit backlog is visible. Do not snap
+    // dates back to "today" when leaving Pending — that hid older credited rows.
     if (next === "PENDING") {
       setFrom("");
       setTo("");
-    } else if (!from && !to) {
-      setFrom(todayInputValue());
-      setTo(todayInputValue());
     }
+  }
+
+  function clearDates() {
+    setFrom("");
+    setTo("");
   }
 
   function clearDatesForPending() {
     setStatus("PENDING");
-    setFrom("");
-    setTo("");
+    clearDates();
   }
 
   async function downloadCsv() {
     setExporting(true);
     try {
       const url = api.exportCsvUrl({
-        from: from ? `${from}T00:00:00` : undefined,
-        to: to ? `${to}T23:59:59.999` : undefined,
+        from: from ? localDayStartIso(from) : undefined,
+        to: to ? localDayEndIso(to) : undefined,
         walletNumberId: walletNumberId || undefined,
       });
       const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
@@ -517,7 +534,16 @@ export default function FeedPage() {
             {!showSkeleton && data?.length === 0 && (
               <tr>
                 <td colSpan={colCount} className="px-4 py-8 text-center text-sand-200">
-                  No deposits for these filters
+                  <p>No deposits for these filters</p>
+                  {datesConstrained && (
+                    <button
+                      type="button"
+                      onClick={clearDates}
+                      className="mt-3 rounded-md border border-ink-700 px-3 py-1.5 text-xs hover:bg-ink-800 text-sand-100"
+                    >
+                      Clear dates (show latest)
+                    </button>
+                  )}
                 </td>
               </tr>
             )}
