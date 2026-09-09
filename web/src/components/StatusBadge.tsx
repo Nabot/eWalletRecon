@@ -1,4 +1,4 @@
-import type { MatchStatus } from "@ewallet/shared";
+import type { MatchStatus, DepositChannel } from "@ewallet/shared";
 
 /** Staff-facing: MATCHED = credited; everything else needs credit. */
 export function StatusBadge({ status }: { status: MatchStatus }) {
@@ -10,6 +10,21 @@ export function StatusBadge({ status }: { status: MatchStatus }) {
       }`}
     >
       {credited ? "CREDITED" : "PENDING"}
+    </span>
+  );
+}
+
+export function ChannelBadge({ channel }: { channel: DepositChannel | string | null | undefined }) {
+  const bank = channel === "BANK";
+  return (
+    <span
+      className={`inline-flex px-2 py-0.5 rounded text-xs font-mono uppercase tracking-wide ${
+        bank
+          ? "bg-ink-800 text-sand-100 ring-1 ring-ink-600"
+          : "bg-ink-950 text-sand-200/80 ring-1 ring-ink-700"
+      }`}
+    >
+      {bank ? "BANK" : "WALLET"}
     </span>
   );
 }

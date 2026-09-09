@@ -8,9 +8,11 @@ import { useToast } from "../lib/toast";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { AgeingChip, StatusBadge } from "../components/StatusBadge";
 import MarkCreditedModal from "../components/MarkCreditedModal";
+import PstBetCreditModal from "../components/PstBetCreditModal";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { formatSender } from "../lib/sender";
 import { providerLabel } from "../lib/providers";
+import type { DepositChannel } from "@ewallet/shared";
 
 /** Local calendar YYYY-MM-DD (not UTC — toISOString shifts the day near midnight). */
 function todayInputValue() {
@@ -80,7 +82,12 @@ function FeedSkeleton({ cols }: { cols: number }) {
   );
 }
 
-export default function FeedPage() {
+type Props = {
+  channel: DepositChannel;
+};
+
+export default function FeedPage({ channel }: Props) {
+  const isBanks = channel === "BANK";
   const { token, staff } = useAuth();
   const qc = useQueryClient();
   const { push } = useToast();
@@ -93,7 +100,9 @@ export default function FeedPage() {
   const [q, setQ] = useState("");
   const qDebounced = useDebouncedValue(q, 300);
   const [creditTarget, setCreditTarget] = useState<DepositEventDto | null>(null);
+  const [pstbetTarget, setPstbetTarget] = useState<DepositEventDto | null>(null);
   const [creditError, setCreditError] = useState<string | null>(null);
+  const [pstbetError, setPstbetError] = useState<string | null>(null);
   const [undoTarget, setUndoTarget] = useState<DepositEventDto | null>(null);
   const [exporting, setExporting] = useState(false);
   const [cols, setCols] = useState<Record<ColId, boolean>>(loadColumns);
@@ -155,13 +164,14 @@ export default function FeedPage() {
     () => ({
       status: status || undefined,
       provider: provider || undefined,
+      channel,
       walletNumberId: walletNumberId || undefined,
       from: from ? localDayStartIso(from) : undefined,
       to: to ? localDayEndIso(to) : undefined,
       q: qDebounced.trim() || undefined,
       limit: 200,
     }),
-    [status, provider, walletNumberId, from, to, qDebounced]
+    [status, provider, channel, walletNumberId, from, to, qDebounced]
   );
 
   const { data, isLoading, isFetching, error, isPlaceholderData } = useQuery({
@@ -185,6 +195,22 @@ export default function FeedPage() {
     enabled: !!token,
   });
 
+  const pstbetStatus = useQuery({
+    queryKey: ["pstbet-status"],
+    queryFn: () => api.pstbetStatus(token!),
+    enabled: !!token,
+    staleTime: 60_000,
+  });
+  const pstbetConfigured = pstbetStatus.data?.configured === true;
+
+  function invalidateCreditQueries() {
+    void qc.invalidateQueries({ queryKey: ["deposits"] });
+    void qc.invalidateQueries({ queryKey: ["exceptions"] });
+    void qc.invalidateQueries({ queryKey: ["pending-count"] });
+    void qc.invalidateQueries({ queryKey: ["audit"] });
+    void qc.invalidateQueries({ queryKey: ["daily-closeout"] });
+  }
+
   const mark = useMutation({
     mutationFn: ({ id, betAccountId, note }: { id: string; betAccountId: string; note: string }) =>
       api.markCredited(token!, id, betAccountId, note || undefined),
@@ -193,13 +219,34 @@ export default function FeedPage() {
       setCreditTarget(null);
       setCreditError(null);
       push(`Credited ${amount} → ${vars.betAccountId}`, "success");
-      void qc.invalidateQueries({ queryKey: ["deposits"] });
-      void qc.invalidateQueries({ queryKey: ["exceptions"] });
-      void qc.invalidateQueries({ queryKey: ["pending-count"] });
-      void qc.invalidateQueries({ queryKey: ["audit"] });
-      void qc.invalidateQueries({ queryKey: ["daily-closeout"] });
+      invalidateCreditQueries();
     },
     onError: (e: Error) => setCreditError(e.message),
+  });
+
+  const pstbetCredit = useMutation({
+    mutationFn: (vars: {
+      id: string;
+      userId: number;
+      userName: string;
+      mobile: string;
+      note: string;
+    }) =>
+      api.pstbetCredit(token!, vars.id, {
+        userId: vars.userId,
+        userName: vars.userName,
+        mobile: vars.mobile,
+        note: vars.note || undefined,
+      }),
+    onSuccess: (res) => {
+      const amount = pstbetTarget ? formatNad(pstbetTarget.amount) : "";
+      setPstbetTarget(null);
+      setPstbetError(null);
+      const ref = res.ourReference ? ` · ${res.ourReference}` : "";
+      push(`PstBet credited ${amount} → ${res.betAccountId}${ref}`, "success");
+      invalidateCreditQueries();
+    },
+    onError: (e: Error) => setPstbetError(e.message),
   });
 
   const uncredit = useMutation({
@@ -208,11 +255,7 @@ export default function FeedPage() {
       const amount = undoTarget ? formatNad(undoTarget.amount) : "deposit";
       setUndoTarget(null);
       push(`Undid credit on ${amount}`, "info");
-      void qc.invalidateQueries({ queryKey: ["deposits"] });
-      void qc.invalidateQueries({ queryKey: ["exceptions"] });
-      void qc.invalidateQueries({ queryKey: ["pending-count"] });
-      void qc.invalidateQueries({ queryKey: ["audit"] });
-      void qc.invalidateQueries({ queryKey: ["daily-closeout"] });
+      invalidateCreditQueries();
     },
     onError: (e: Error) => {
       push(e.message, "error");
@@ -246,13 +289,14 @@ export default function FeedPage() {
         from: from ? localDayStartIso(from) : undefined,
         to: to ? localDayEndIso(to) : undefined,
         walletNumberId: walletNumberId || undefined,
+        channel,
       });
       const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) throw new Error("Export failed");
       const blob = await res.blob();
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = `ewallet-deposits-${from || "export"}.csv`;
+      a.download = `${isBanks ? "bank" : "wallet"}-deposits-${from || "export"}.csv`;
       a.click();
       URL.revokeObjectURL(a.href);
       push("CSV exported", "success");
@@ -278,7 +322,13 @@ export default function FeedPage() {
         <td key="amount" className="px-3 py-3">
           <div className="font-mono text-base text-sand-50 tabular-nums">{formatNad(d.amount)}</div>
           {d.creditBetAccountId && (
-            <div className="font-mono text-[11px] text-sand-200 mt-0.5">{d.creditBetAccountId}</div>
+            <div className="font-mono text-[11px] text-sand-200 mt-0.5">
+              {d.creditProvider === "PSTBET" ? "PstBet · " : ""}
+              {d.creditBetAccountId}
+            </div>
+          )}
+          {d.pstbetOurReference && (
+            <div className="font-mono text-[10px] text-sand-200/60 mt-0.5">{d.pstbetOurReference}</div>
           )}
         </td>
       ),
@@ -313,6 +363,9 @@ export default function FeedPage() {
       reference: (
         <td key="reference" className="px-3 py-3 font-mono text-xs text-sand-200">
           {d.reference ?? "—"}
+          {isBanks && d.reference && (
+            <div className="text-[10px] text-sand-200/55 mt-0.5 font-sans">Lookup mobile</div>
+          )}
         </td>
       ),
       wallet: (
@@ -324,16 +377,30 @@ export default function FeedPage() {
       action: (
         <td key="action" className="px-3 py-3">
           {d.matchStatus !== "MATCHED" ? (
-            <button
-              type="button"
-              onClick={() => {
-                setCreditError(null);
-                setCreditTarget(d);
-              }}
-              className="rounded-md border border-veld-500 text-veld-400 hover:bg-veld-600/20 px-2 py-1 text-xs font-sans"
-            >
-              Mark credited
-            </button>
+            <div className="flex flex-wrap gap-1.5">
+              {pstbetConfigured && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPstbetError(null);
+                    setPstbetTarget(d);
+                  }}
+                  className="rounded-md border border-veld-500 text-veld-400 hover:bg-veld-600/20 px-2 py-1 text-xs font-sans"
+                >
+                  PstBet
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setCreditError(null);
+                  setCreditTarget(d);
+                }}
+                className="rounded-md border border-ink-700 px-2 py-1 text-xs font-sans hover:bg-ink-800"
+              >
+                Mark credited
+              </button>
+            </div>
           ) : staff?.role === "ADMIN" ? (
             <button
               type="button"
@@ -357,10 +424,13 @@ export default function FeedPage() {
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
           <h2 className="font-sans font-semibold tracking-tight text-3xl text-sand-50">
-            Live deposit feed
+            {isBanks ? "Banks live feed" : "Wallets live feed"}
           </h2>
           <p className="text-sand-200 font-sans mt-1">
-            Browse, filter, and export. Work the credit queue under{" "}
+            {isBanks
+              ? "Bank Windhoek transfers — REF cellphone maps to PstBet lookup. "
+              : "E-wallet deposits from capture phones. "}
+            Work the credit queue under{" "}
             <Link to="/exceptions" className="text-veld-400 hover:underline">
               Pending credits
             </Link>
@@ -454,10 +524,16 @@ export default function FeedPage() {
             onChange={(e) => setProvider(e.target.value)}
           >
             <option value="">All</option>
-            <option value="PAYPULSE">PayPulse</option>
-            <option value="EASYWALLET">EasyWallet</option>
-            <option value="EWALLET">FNB eWallet</option>
-            <option value="PAY2CELL">Pay2Cell</option>
+            {isBanks ? (
+              <option value="BANK_WHK">Bank WHK</option>
+            ) : (
+              <>
+                <option value="PAYPULSE">PayPulse</option>
+                <option value="EASYWALLET">EasyWallet</option>
+                <option value="EWALLET">FNB eWallet</option>
+                <option value="PAY2CELL">Pay2Cell</option>
+              </>
+            )}
           </select>
         </label>
         <label className="block">
@@ -515,7 +591,7 @@ export default function FeedPage() {
             <tr>
               {visibleCols.map((c) => (
                 <th key={c.id} className="px-3 py-3">
-                  {c.label}
+                  {c.id === "reference" && isBanks ? "Reference (mobile)" : c.label}
                 </th>
               ))}
             </tr>
@@ -564,12 +640,31 @@ export default function FeedPage() {
         />
       )}
 
+      {pstbetTarget && (
+        <PstBetCreditModal
+          deposit={pstbetTarget}
+          busy={pstbetCredit.isPending}
+          error={pstbetError}
+          onClose={() => {
+            setPstbetTarget(null);
+            setPstbetError(null);
+          }}
+          onLookup={(mobile) => api.pstbetLookup(token!, pstbetTarget.id, mobile)}
+          onConfirm={async (params) => {
+            setPstbetError(null);
+            await pstbetCredit.mutateAsync({ id: pstbetTarget.id, ...params });
+          }}
+        />
+      )}
+
       {undoTarget && (
         <ConfirmDialog
           title="Undo credit?"
           body={`${formatNad(undoTarget.amount)} credited to ${undoTarget.creditBetAccountId ?? "—"}${
+            undoTarget.creditProvider === "PSTBET" ? " (via PstBet)" : ""
+          }${undoTarget.pstbetOurReference ? `\nRef: ${undoTarget.pstbetOurReference}` : ""}${
             undoTarget.creditNote ? `\nNote: ${undoTarget.creditNote}` : ""
-          }\n\nThis returns the deposit to pending.`}
+          }\n\nThis returns the deposit to pending. It does not reverse the PstBet top-up.`}
           confirmLabel="Undo credit"
           danger
           busy={uncredit.isPending}

@@ -30,7 +30,8 @@ export default function App() {
           </Protected>
         }
       >
-        <Route index element={<FeedPage />} />
+        <Route index element={<FeedPage channel="WALLET" />} />
+        <Route path="banks" element={<FeedPage channel="BANK" />} />
         <Route path="exceptions" element={<ExceptionsPage />} />
         <Route path="reports" element={<ReportsPage />} />
         <Route path="devices" element={<DevicesPage />} />

@@ -4,13 +4,25 @@ import { MatchStatus, Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { requireStaff, requireRole } from "../middleware/auth";
 import { markDepositCredited, uncreditDeposit } from "../services/matching/manualCredit";
+import { creditDepositViaPstBet, lookupPstBetForDeposit } from "../services/pstbet/credit";
+import { PstBetApiError } from "../services/pstbet/client";
 import { parseSmsWithFallback } from "../services/parsers";
 import { attachActorLabels, buildAuditWhere, writeAuditLog } from "../lib/audit";
 import { toNumber } from "../lib/money";
-import { config } from "../config/env";
+import { config, isPstBetConfigured } from "../config/env";
 import { generateApiKey, generateRefCode, hashApiKey } from "../lib/crypto";
 import { toDeviceDto } from "../services/devices/deviceDto";
 import type { ActorType } from "@prisma/client";
+
+function pstbetHttpStatus(e: unknown): number {
+  if (!(e instanceof PstBetApiError)) return 400;
+  if (e.code === "CONFIG") return 503;
+  if (e.code === "AUTH") return 502;
+  if (e.code === "NETWORK") return 502;
+  if (e.code === "NOT_FOUND") return 404;
+  if (e.code === "AMOUNT") return 400;
+  return 400;
+}
 
 export const apiRouter = Router();
 apiRouter.use(requireStaff);
@@ -40,6 +52,7 @@ function pendingWhere(): Prisma.DepositEventWhereInput {
 apiRouter.get("/deposits", async (req, res) => {
   const statusParam = String(req.query.status ?? "").toUpperCase();
   const provider = String(req.query.provider ?? "").toUpperCase();
+  const channelParam = String(req.query.channel ?? "").toUpperCase();
   const walletNumberId = String(req.query.walletNumberId ?? "").trim();
   const q = String(req.query.q ?? "").trim();
   const from = req.query.from ? new Date(String(req.query.from)) : null;
@@ -56,7 +69,14 @@ apiRouter.get("/deposits", async (req, res) => {
     where.matchStatus = statusParam as MatchStatus;
   }
 
-  if (provider && ["PAYPULSE", "EASYWALLET", "PAY2CELL", "EWALLET"].includes(provider)) {
+  if (channelParam === "WALLET" || channelParam === "BANK") {
+    where.channel = channelParam;
+  }
+
+  if (
+    provider &&
+    ["PAYPULSE", "EASYWALLET", "PAY2CELL", "EWALLET", "BANK_WHK"].includes(provider)
+  ) {
     where.provider = provider as Prisma.EnumWalletProviderFilter["equals"];
   }
   if (walletNumberId) where.walletNumberId = walletNumberId;
@@ -97,11 +117,15 @@ apiRouter.get("/deposits/export.csv", async (req, res) => {
     : new Date(new Date().setHours(0, 0, 0, 0));
   const to = req.query.to ? new Date(String(req.query.to)) : new Date();
   const walletNumberId = String(req.query.walletNumberId ?? "").trim();
+  const channelParam = String(req.query.channel ?? "").toUpperCase();
 
   const where: Prisma.DepositEventWhereInput = {
     receivedAt: { gte: from, lte: to },
   };
   if (walletNumberId) where.walletNumberId = walletNumberId;
+  if (channelParam === "WALLET" || channelParam === "BANK") {
+    where.channel = channelParam;
+  }
 
   const deposits = await prisma.depositEvent.findMany({
     where,
@@ -118,6 +142,7 @@ apiRouter.get("/deposits/export.csv", async (req, res) => {
 
   const header = [
     "receivedAt",
+    "channel",
     "provider",
     "toPhone",
     "toLabel",
@@ -135,6 +160,7 @@ apiRouter.get("/deposits/export.csv", async (req, res) => {
   const rows = deposits.map((d) =>
     [
       esc(d.receivedAt.toISOString()),
+      esc(d.channel),
       esc(d.provider),
       esc(d.walletNumber.msisdn),
       esc(d.walletNumber.label),
@@ -188,9 +214,15 @@ apiRouter.get("/deposits/:id", async (req, res) => {
   });
 });
 
-apiRouter.get("/exceptions", async (_req, res) => {
+apiRouter.get("/exceptions", async (req, res) => {
+  const channelParam = String(req.query.channel ?? "").toUpperCase();
+  const where: Prisma.DepositEventWhereInput = { ...pendingWhere() };
+  if (channelParam === "WALLET" || channelParam === "BANK") {
+    where.channel = channelParam;
+  }
+
   const deposits = await prisma.depositEvent.findMany({
-    where: pendingWhere(),
+    where,
     orderBy: { receivedAt: "desc" },
     take: 100,
     include: {
@@ -220,6 +252,67 @@ apiRouter.post("/deposits/:id/mark-credited", async (req, res) => {
     res.json(outcome);
   } catch (e) {
     res.status(400).json({ error: e instanceof Error ? e.message : "Mark credited failed" });
+  }
+});
+
+/** Whether PstBet assisted credit is available. */
+apiRouter.get("/pstbet/status", async (_req, res) => {
+  res.json({
+    configured: isPstBetConfigured(),
+    shopName: isPstBetConfigured() ? config.pstbet.shopName : null,
+    minAmount: config.pstbet.minAmount,
+    maxAmount: config.pstbet.maxAmount,
+  });
+});
+
+/** Look up PstBet account for a deposit (by sender MSISDN or override mobile). */
+apiRouter.post("/deposits/:id/pstbet-lookup", async (req, res) => {
+  const body = z
+    .object({
+      mobile: z.string().min(8).max(20).optional().nullable(),
+    })
+    .safeParse(req.body ?? {});
+  if (!body.success) return res.status(400).json({ error: body.error.flatten() });
+
+  try {
+    const result = await lookupPstBetForDeposit({
+      depositEventId: req.params.id,
+      mobileOverride: body.data.mobile,
+    });
+    res.json(result);
+  } catch (e) {
+    res.status(pstbetHttpStatus(e)).json({
+      error: e instanceof Error ? e.message : "PstBet lookup failed",
+    });
+  }
+});
+
+/** Confirm and credit deposit via PstBet top-up API. */
+apiRouter.post("/deposits/:id/pstbet-credit", async (req, res) => {
+  const body = z
+    .object({
+      userId: z.number().int().positive(),
+      userName: z.string().min(1).max(128),
+      mobile: z.string().min(8).max(20),
+      note: z.string().max(500).optional().nullable(),
+    })
+    .safeParse(req.body ?? {});
+  if (!body.success) return res.status(400).json({ error: body.error.flatten() });
+
+  try {
+    const outcome = await creditDepositViaPstBet({
+      depositEventId: req.params.id,
+      staffId: req.staff!.staffId,
+      userId: body.data.userId,
+      userName: body.data.userName,
+      mobile: body.data.mobile,
+      note: body.data.note,
+    });
+    res.json(outcome);
+  } catch (e) {
+    res.status(pstbetHttpStatus(e)).json({
+      error: e instanceof Error ? e.message : "PstBet credit failed",
+    });
   }
 });
 

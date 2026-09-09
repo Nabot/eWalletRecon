@@ -50,4 +50,10 @@ describe("easywalletParser (Bank WHK)", () => {
   it("returns null without EasyWallet cue", () => {
     expect(easywalletParser.parse("FNB :) someone sent you N¤100.00")).toBeNull();
   });
+
+  it("returns null for Bank WHK transfer SMS (no EasyWallet keyword)", () => {
+    const bankTransfer =
+      "Bank WHK:  Byte-Able Investment CC/2015/04028 sent you an of NAD5000.00 O. REF:0813544045";
+    expect(easywalletParser.parse(bankTransfer)).toBeNull();
+  });
 });

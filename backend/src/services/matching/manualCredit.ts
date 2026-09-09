@@ -33,6 +33,11 @@ function toDto(updated: any) {
     creditNote: updated.creditNote ?? null,
     creditedAt: updated.creditedAt ? updated.creditedAt.toISOString() : null,
     creditedByStaffId: updated.creditedByStaffId ?? null,
+    creditProvider: updated.creditProvider ?? null,
+    pstbetOurReference: updated.pstbetOurReference ?? null,
+    pstbetTheirReference: updated.pstbetTheirReference ?? null,
+    creditError: updated.creditError ?? null,
+    channel: updated.channel ?? "WALLET",
     createdAt: updated.createdAt.toISOString(),
     walletNumber: updated.walletNumber,
   };
@@ -70,6 +75,10 @@ export async function markDepositCredited(params: {
       creditNote: params.note?.trim() || null,
       creditedAt: new Date(),
       creditedByStaffId: params.staffId,
+      creditProvider: "MANUAL",
+      pstbetOurReference: null,
+      pstbetTheirReference: null,
+      creditError: null,
     },
     include: {
       walletNumber: { select: { msisdn: true, label: true, provider: true } },
@@ -129,6 +138,10 @@ export async function uncreditDeposit(params: {
       creditedAt: null,
       creditedByStaffId: null,
       matchedTopupRequestId: null,
+      creditProvider: null,
+      pstbetOurReference: null,
+      pstbetTheirReference: null,
+      creditError: null,
     },
     include: {
       walletNumber: { select: { msisdn: true, label: true, provider: true } },
@@ -145,6 +158,8 @@ export async function uncreditDeposit(params: {
       amount: toNumber(event.amount),
       previousBetAccountId: event.creditBetAccountId,
       previousNote: event.creditNote,
+      previousProvider: event.creditProvider,
+      previousOurReference: event.pstbetOurReference,
       reason: params.reason?.trim() || null,
     },
   });

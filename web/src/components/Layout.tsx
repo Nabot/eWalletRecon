@@ -12,7 +12,8 @@ const links: {
   end?: boolean;
   badge?: "pending" | "offline";
 }[] = [
-  { to: "/", label: "Live feed", short: "Feed", end: true },
+  { to: "/", label: "Wallets Live Feed", short: "Wallets", end: true },
+  { to: "/banks", label: "Banks Live Feed", short: "Banks" },
   { to: "/exceptions?focus=oldest", label: "Pending credits", short: "Pending", badge: "pending" },
   { to: "/reports", label: "Reports", short: "Reports" },
   { to: "/devices", label: "Phones", short: "Phones", badge: "offline" },
@@ -175,7 +176,7 @@ export default function Layout() {
 
       {/* Mobile bottom nav */}
       <nav className="md:hidden fixed bottom-0 inset-x-0 z-20 border-t border-ink-700 bg-ink-900 safe-bottom">
-        <div className="grid grid-cols-5 gap-0">
+        <div className="grid grid-cols-6 gap-0">
           {links.map((l) => {
             const count = badgeCount(l.badge);
             return (

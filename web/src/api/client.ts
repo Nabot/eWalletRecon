@@ -8,6 +8,9 @@ import type {
   TopupRequestDto,
   DailyCloseoutDto,
   WalletProvider,
+  PstBetStatusDto,
+  PstBetLookupDto,
+  PstBetCreditOutcomeDto,
 } from "@ewallet/shared";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "";
@@ -33,6 +36,7 @@ async function request<T>(path: string, token: string | null, init?: RequestInit
 export type DepositFilters = {
   status?: string;
   provider?: string;
+  channel?: "WALLET" | "BANK";
   walletNumberId?: string;
   from?: string;
   to?: string;
@@ -56,6 +60,7 @@ function depositQuery(f: DepositFilters): string {
   const p = new URLSearchParams();
   if (f.status) p.set("status", f.status);
   if (f.provider) p.set("provider", f.provider);
+  if (f.channel) p.set("channel", f.channel);
   if (f.walletNumberId) p.set("walletNumberId", f.walletNumberId);
   if (f.from) p.set("from", f.from);
   if (f.to) p.set("to", f.to);
@@ -97,7 +102,11 @@ export const api = {
   pendingCount: (token: string) =>
     request<{ count: number }>("/api/deposits/pending-count", token),
 
-  exceptions: (token: string) => request<DepositEventDto[]>("/api/exceptions", token),
+  exceptions: (token: string, channel?: "WALLET" | "BANK") =>
+    request<DepositEventDto[]>(
+      `/api/exceptions${channel ? `?channel=${channel}` : ""}`,
+      token
+    ),
 
   devices: (token: string) => request<CaptureDeviceDto[]>("/api/devices", token),
 
@@ -236,17 +245,46 @@ export const api = {
       body: JSON.stringify({ betAccountId, note: note || null }),
     }),
 
+  pstbetStatus: (token: string) => request<PstBetStatusDto>("/api/pstbet/status", token),
+
+  pstbetLookup: (token: string, depositId: string, mobile?: string) =>
+    request<PstBetLookupDto>(`/api/deposits/${depositId}/pstbet-lookup`, token, {
+      method: "POST",
+      body: JSON.stringify({ mobile: mobile || null }),
+    }),
+
+  pstbetCredit: (
+    token: string,
+    depositId: string,
+    body: { userId: number; userName: string; mobile: string; note?: string }
+  ) =>
+    request<PstBetCreditOutcomeDto>(`/api/deposits/${depositId}/pstbet-credit`, token, {
+      method: "POST",
+      body: JSON.stringify({
+        userId: body.userId,
+        userName: body.userName,
+        mobile: body.mobile,
+        note: body.note || null,
+      }),
+    }),
+
   uncredit: (token: string, depositId: string, reason?: string) =>
     request(`/api/deposits/${depositId}/uncredit`, token, {
       method: "POST",
       body: JSON.stringify({ reason: reason || null }),
     }),
 
-  exportCsvUrl: (filters: { from?: string; to?: string; walletNumberId?: string }) => {
+  exportCsvUrl: (filters: {
+    from?: string;
+    to?: string;
+    walletNumberId?: string;
+    channel?: "WALLET" | "BANK";
+  }) => {
     const p = new URLSearchParams();
     if (filters.from) p.set("from", filters.from);
     if (filters.to) p.set("to", filters.to);
     if (filters.walletNumberId) p.set("walletNumberId", filters.walletNumberId);
+    if (filters.channel) p.set("channel", filters.channel);
     return `${API_URL}/api/deposits/export.csv?${p.toString()}`;
   },
 };

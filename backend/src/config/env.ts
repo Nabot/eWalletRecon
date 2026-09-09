@@ -34,4 +34,18 @@ export const config = {
   /** Optional Slack/Discord/generic webhook for phone alerts. */
   alertWebhookUrl: process.env.ALERT_WEBHOOK_URL?.trim() || null,
   nodeEnv: process.env.NODE_ENV ?? "development",
+
+  /** PstBet POS API (optional — assisted credit disabled when unset). */
+  pstbet: {
+    baseUrl: (process.env.PSTBET_BASE_URL ?? "https://service.pstmobile.com.na/pos").replace(/\/$/, ""),
+    userName: process.env.PSTBET_USERNAME?.trim() || null,
+    password: process.env.PSTBET_PASSWORD?.trim() || null,
+    shopName: process.env.PSTBET_SHOP_NAME?.trim() || "WalletRecon",
+    minAmount: Number(process.env.PSTBET_MIN_AMOUNT ?? 5),
+    maxAmount: Number(process.env.PSTBET_MAX_AMOUNT ?? 5000),
+  },
 };
+
+export function isPstBetConfigured(): boolean {
+  return Boolean(config.pstbet.userName && config.pstbet.password);
+}

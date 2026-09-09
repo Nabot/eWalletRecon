@@ -1,6 +1,8 @@
 /** Shared types for e-wallet reconciliation (backend + web). */
 
-export type WalletProvider = "PAYPULSE" | "EASYWALLET" | "PAY2CELL" | "EWALLET";
+export type WalletProvider = "PAYPULSE" | "EASYWALLET" | "PAY2CELL" | "EWALLET" | "BANK_WHK";
+
+export type DepositChannel = "WALLET" | "BANK";
 
 export type MatchStatus = "PENDING" | "MATCHED" | "UNMATCHED" | "MANUAL";
 
@@ -22,6 +24,7 @@ export interface NormalizedDeposit {
   /** Optional external id when source is webhook/merchant API */
   externalId?: string | null;
   source: DepositSource;
+  channel?: DepositChannel;
 }
 
 export type DepositSource = "SMS" | "WEBHOOK" | "MANUAL";
@@ -41,10 +44,13 @@ export interface MatchResult {
   credited: boolean;
 }
 
+export type CreditProvider = "MANUAL" | "PSTBET";
+
 export interface DepositEventDto {
   id: string;
   walletNumberId: string;
   provider: WalletProvider;
+  channel: DepositChannel;
   amount: number;
   currency: string;
   senderMsisdn: string | null;
@@ -58,12 +64,53 @@ export interface DepositEventDto {
   creditNote: string | null;
   creditedAt: string | null;
   creditedByStaffId: string | null;
+  creditProvider: CreditProvider | string | null;
+  pstbetOurReference: string | null;
+  pstbetTheirReference: string | null;
+  creditError: string | null;
   createdAt: string;
   walletNumber?: {
     msisdn: string;
     label: string;
     provider: WalletProvider;
   };
+}
+
+export interface PstBetStatusDto {
+  configured: boolean;
+  shopName: string | null;
+  minAmount: number;
+  maxAmount: number;
+}
+
+export interface PstBetPunterDto {
+  punterId: number;
+  userName: string;
+  mobile: string;
+  firstName: string | null;
+  lastName: string | null;
+  balance: number | null;
+}
+
+export interface PstBetLookupDto {
+  depositId: string;
+  amount: number;
+  currency: string;
+  senderMsisdn: string | null;
+  mobile: string;
+  punter: PstBetPunterDto;
+  amountInRange: boolean;
+  minAmount: number;
+  maxAmount: number;
+}
+
+export interface PstBetCreditOutcomeDto {
+  status: MatchStatus;
+  credited: boolean;
+  reason: string;
+  ourReference: string | null;
+  theirReference: string | null;
+  betAccountId: string;
 }
 
 export interface DailyCloseoutDto {

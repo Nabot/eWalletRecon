@@ -12,6 +12,12 @@ enum WalletProvider {
   EASYWALLET
   PAY2CELL
   EWALLET
+  BANK_WHK
+}
+
+enum DepositChannel {
+  WALLET
+  BANK
 }
 
 enum MatchStatus {
@@ -100,6 +106,8 @@ model DepositEvent {
   id                    String         @id @default(cuid())
   walletNumberId        String
   provider              WalletProvider
+  /// WALLET = e-wallet rails; BANK = bank transfer (e.g. Bank WHK REF=cellphone)
+  channel               DepositChannel @default(WALLET)
   amount                Decimal        @db.Decimal(14, 2)
   currency              String         @default("NAD")
   senderMsisdn          String?
@@ -113,12 +121,20 @@ model DepositEvent {
   externalId            String?
   /// Client-supplied idempotency key from capture device (SMS hash)
   captureIdempotencyKey String?        @unique
-  /// Manual credit: betting account id entered by staff
+  /// Manual / PstBet credit: betting account id (or PstBet userName)
   creditBetAccountId    String?
-  /// Manual credit: free-text note
+  /// Manual / PstBet credit: free-text note
   creditNote            String?        @db.Text
   creditedAt            DateTime?
   creditedByStaffId     String?
+  /// How the deposit was credited: MANUAL | PSTBET
+  creditProvider         String?
+  /// PstBet payment response: PstMobile transaction ID
+  pstbetOurReference    String?
+  /// PstBet payment response: betting system transaction ID
+  pstbetTheirReference  String?
+  /// Last PstBet credit error (cleared on success)
+  creditError           String?        @db.Text
 
   walletNumber        WalletNumber   @relation(fields: [walletNumberId], references: [id])
   matchedTopupRequest TopupRequest?  @relation(fields: [matchedTopupRequestId], references: [id])
@@ -130,6 +146,9 @@ model DepositEvent {
   @@index([receivedAt])
   @@index([walletNumberId, receivedAt])
   @@index([creditBetAccountId])
+  @@index([pstbetOurReference])
+  @@index([channel])
+  @@index([channel, receivedAt])
 }
 
 model TopupRequest {

@@ -2,10 +2,17 @@ import type { WalletProvider } from "@prisma/client";
 import type { SmsParser, ParsedSms } from "./types";
 import { paypulseParser } from "./paypulse";
 import { easywalletParser } from "./easywallet";
+import { bankWhkParser } from "./bankWhk";
 import { pay2cellParser } from "./pay2cell";
 import { ewalletParser } from "./ewallet";
 
-const parsers: SmsParser[] = [paypulseParser, easywalletParser, pay2cellParser, ewalletParser];
+const parsers: SmsParser[] = [
+  paypulseParser,
+  easywalletParser,
+  bankWhkParser,
+  pay2cellParser,
+  ewalletParser,
+];
 
 const byProvider = new Map<WalletProvider, SmsParser>(
   parsers.map((p) => [p.provider, p])

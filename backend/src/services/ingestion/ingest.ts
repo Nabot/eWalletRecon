@@ -99,6 +99,7 @@ export async function ingestDeposit(input: NormalizedDepositInput): Promise<Inge
     data: {
       walletNumberId: input.walletNumberId,
       provider: input.provider,
+      channel: input.provider === "BANK_WHK" ? "BANK" : "WALLET",
       amount: input.amount,
       currency: input.currency ?? "NAD",
       senderMsisdn: input.senderMsisdn ?? null,
@@ -248,6 +249,11 @@ function serializeDeposit(event: any) {
     creditNote: event.creditNote ?? null,
     creditedAt: event.creditedAt ? event.creditedAt.toISOString() : null,
     creditedByStaffId: event.creditedByStaffId ?? null,
+    creditProvider: event.creditProvider ?? null,
+    pstbetOurReference: event.pstbetOurReference ?? null,
+    pstbetTheirReference: event.pstbetTheirReference ?? null,
+    creditError: event.creditError ?? null,
+    channel: event.channel ?? "WALLET",
     createdAt: event.createdAt.toISOString(),
     walletNumber: event.walletNumber,
   };
