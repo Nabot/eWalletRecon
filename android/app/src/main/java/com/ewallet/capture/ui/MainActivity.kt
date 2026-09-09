@@ -414,7 +414,7 @@ fun StatusScreen(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        "WalletRecon Capture",
+                        "Wallet Capture",
                         style = MaterialTheme.typography.headlineLarge,
                         color = MaterialTheme.colorScheme.onBackground
                     )

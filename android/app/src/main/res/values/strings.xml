@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">WalletRecon Capture</string>
+    <string name="app_name">Wallet Capture</string>
     <string name="sms_permission_rationale">
         This app reads incoming e-wallet SMS on this phone so deposits can be matched to betting accounts.
         Messages are sent only to your company reconciliation server. SMS is not shared with third parties.

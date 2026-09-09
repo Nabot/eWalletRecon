@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import QRCode from "qrcode";
@@ -18,6 +18,8 @@ type ProvisionResult = {
   reason?: "created" | "rotated" | "reshow" | "wipe";
 };
 
+type Panel = "register" | "wallets" | null;
+
 function feedLink(walletNumberId: string, status?: string) {
   const p = new URLSearchParams();
   p.set("walletNumberId", walletNumberId);
@@ -28,6 +30,18 @@ function feedLink(walletNumberId: string, status?: string) {
 function fmtWhen(iso: string | null | undefined) {
   if (!iso) return "never";
   return new Date(iso).toLocaleString();
+}
+
+function fmtRelative(iso: string | null | undefined) {
+  if (!iso) return "never";
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return "never";
+  const sec = Math.round((Date.now() - t) / 1000);
+  if (sec < 45) return "just now";
+  if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
+  if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
+  if (sec < 86400 * 7) return `${Math.floor(sec / 86400)}d ago`;
+  return new Date(iso).toLocaleDateString();
 }
 
 export default function DevicesPage() {
@@ -58,6 +72,7 @@ export default function DevicesPage() {
   const [provision, setProvision] = useState<ProvisionResult | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [panel, setPanel] = useState<Panel>(null);
 
   useEffect(() => {
     const deviceId = searchParams.get("device");
@@ -72,6 +87,7 @@ export default function DevicesPage() {
     [wallets.data]
   );
   const noUnboundWallets = (wallets.data?.length ?? 0) > 0 && unboundWallets.length === 0;
+  const hasAlerts = offline.length > 0 || queueAlerts.length > 0 || updateNeeded.length > 0;
 
   async function showProvision(
     res: Omit<ProvisionResult, "reason">,
@@ -101,6 +117,7 @@ export default function DevicesPage() {
       setWalletNumberId("");
       setSiteLabel("");
       setHolderName("");
+      setPanel(null);
       void qc.invalidateQueries({ queryKey: ["devices"] });
       void qc.invalidateQueries({ queryKey: ["wallets"] });
       void qc.invalidateQueries({ queryKey: ["audit"] });
@@ -123,68 +140,132 @@ export default function DevicesPage() {
     return () => document.removeEventListener("keydown", onKey);
   }, [provision]);
 
-  function scrollToRegister() {
-    registerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    const input = registerRef.current?.querySelector<HTMLInputElement>("input");
-    input?.focus();
+  function openRegister() {
+    setPanel("register");
+    requestAnimationFrame(() => {
+      registerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      const input = registerRef.current?.querySelector<HTMLInputElement>("input");
+      input?.focus();
+    });
+  }
+
+  function togglePanel(next: Panel) {
+    setPanel((cur) => (cur === next ? null : next));
   }
 
   const devices = data ?? [];
   const empty = !isLoading && devices.length === 0;
+  const onlineCount = devices.filter((d) => d.online).length;
 
   return (
     <div>
-      <div className="mb-6">
-        <h2 className="font-sans font-semibold tracking-tight text-3xl text-sand-50">Phones</h2>
-        <p className="text-sand-200 font-sans mt-1">
-          Capture handset health, provision QR, sync wake, and wallet binding
-        </p>
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="font-sans font-semibold tracking-tight text-3xl text-sand-50">Phones</h2>
+          <p className="text-sand-200 font-sans mt-1">
+            {isLoading && !data
+              ? "Loading capture handsets…"
+              : devices.length === 0
+                ? "Register a capture handset to receive SMS deposits"
+                : `${onlineCount}/${devices.length} online · provision, sync, and wallet binding`}
+          </p>
+        </div>
+        {isAdmin && (
+          <div className="flex flex-wrap gap-2">
+            {(wallets.data?.length ?? 0) > 0 && (
+              <button
+                type="button"
+                onClick={() => togglePanel("wallets")}
+                className={`rounded-md border px-3 py-1.5 text-sm font-sans hover:bg-ink-800 ${
+                  panel === "wallets"
+                    ? "border-veld-600 bg-veld-600/10 text-veld-400"
+                    : "border-ink-700 text-sand-50"
+                }`}
+              >
+                Wallet labels
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => (panel === "register" ? setPanel(null) : openRegister())}
+              className="rounded-md bg-veld-600 hover:bg-veld-500 text-white px-3 py-1.5 text-sm font-semibold"
+            >
+              Add phone
+            </button>
+          </div>
+        )}
       </div>
 
-      {offline.length > 0 && (
-        <div className="mb-3 rounded-md border border-clay-500/40 bg-clay-600/15 px-4 py-3 text-sm font-sans">
-          <p className="text-clay-400 font-semibold">
-            {offline.length} phone{offline.length === 1 ? "" : "s"} offline
-          </p>
-          <p className="text-sand-200 mt-1">
-            {offline.map((d) => d.name).join(", ")} — SMS capture may be delayed.
-          </p>
-        </div>
-      )}
-      {queueAlerts.length > 0 && (
-        <div className="mb-3 rounded-md border border-clay-500/40 bg-clay-600/15 px-4 py-3 text-sm font-sans">
-          <p className="text-clay-400 font-semibold">High pending SMS queue</p>
-          <p className="text-sand-200 mt-1">
-            {queueAlerts.map((d) => `${d.name} (${d.pendingSmsCount})`).join(", ")} — try Force sync.
-          </p>
-        </div>
-      )}
-      {updateNeeded.length > 0 && (
-        <div className="mb-3 rounded-md border border-amber-500/35 bg-amber-500/10 px-4 py-3 text-sm font-sans">
-          <p className="text-amber-200 font-semibold">App update required</p>
-          <p className="text-sand-200 mt-1">
-            {updateNeeded.map((d) => `${d.name} (v${d.appVersionName ?? d.appVersionCode ?? "?"})`).join(", ")}
-          </p>
+      {hasAlerts && (
+        <div className="mb-4 rounded-lg border border-ink-700 bg-ink-900 shadow-fb divide-y divide-ink-800">
+          {offline.length > 0 && (
+            <div className="px-4 py-3 text-sm font-sans flex gap-3">
+              <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-clay-400" />
+              <div>
+                <p className="text-clay-400 font-semibold">
+                  {offline.length} offline
+                </p>
+                <p className="text-sand-200 mt-0.5">
+                  {offline.map((d) => d.name).join(", ")} — SMS capture may be delayed.
+                </p>
+              </div>
+            </div>
+          )}
+          {queueAlerts.length > 0 && (
+            <div className="px-4 py-3 text-sm font-sans flex gap-3">
+              <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-clay-400" />
+              <div>
+                <p className="text-clay-400 font-semibold">High SMS queue</p>
+                <p className="text-sand-200 mt-0.5">
+                  {queueAlerts.map((d) => `${d.name} (${d.pendingSmsCount})`).join(", ")} — try Force
+                  sync on the phone card.
+                </p>
+              </div>
+            </div>
+          )}
+          {updateNeeded.length > 0 && (
+            <div className="px-4 py-3 text-sm font-sans flex gap-3">
+              <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-amber-400" />
+              <div>
+                <p className="text-amber-700 font-semibold">App update required</p>
+                <p className="text-sand-200 mt-0.5">
+                  {updateNeeded
+                    .map((d) => `${d.name} (v${d.appVersionName ?? d.appVersionCode ?? "?"})`)
+                    .join(", ")}
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {isAdmin && (
+      {isAdmin && panel === "register" && (
         <div
           ref={registerRef}
           id="register-phone"
-          className="mb-6 border border-ink-700 rounded-lg p-4 bg-ink-900 shadow-fb"
+          className="mb-4 border border-ink-700 rounded-lg p-4 bg-ink-900 shadow-fb"
         >
-          <h3 className="font-sans font-semibold text-sand-50">Register phone</h3>
-          <p className="text-sm text-sand-200 mt-1">
-            Creates a key. Scan the QR on the handset — connection locks after first success. QR can be
-            re-shown until the phone heartbeats.
-          </p>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="font-sans font-semibold text-sand-50">Register phone</h3>
+              <p className="text-sm text-sand-200 mt-1">
+                Creates a key. Scan the QR on the handset — connection locks after first success.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="text-sm text-sand-200 hover:text-sand-50 shrink-0"
+              onClick={() => setPanel(null)}
+            >
+              Close
+            </button>
+          </div>
           {noUnboundWallets ? (
             <p className="mt-3 text-sm text-sand-200 font-sans">
               All wallets have a phone. Revoke or rebind an existing phone first.
             </p>
           ) : (
-            <div className="mt-3 grid sm:grid-cols-2 lg:grid-cols-4 gap-2 font-sans text-sm">
+            <div className="mt-3 grid sm:grid-cols-2 gap-3 font-sans text-sm">
               <label className="block">
                 <span className="text-xs text-sand-200">Phone name</span>
                 <input
@@ -227,7 +308,7 @@ export default function DevicesPage() {
                   placeholder="Who holds the handset"
                 />
               </label>
-              <div className="sm:col-span-2 lg:col-span-4 flex justify-end">
+              <div className="sm:col-span-2 flex justify-end">
                 <button
                   type="button"
                   disabled={
@@ -244,20 +325,26 @@ export default function DevicesPage() {
         </div>
       )}
 
-      {isAdmin && (wallets.data?.length ?? 0) > 0 && (
-        <div className="mb-6 border border-ink-700 rounded-lg p-4 bg-ink-900 shadow-fb">
-          <h3 className="font-sans font-semibold text-sand-50">Wallet numbers</h3>
-          <p className="text-sm text-sand-200 mt-1">
-            Rename the display label for each receiving wallet phone. Provider and MSISDN stay the same.
-          </p>
+      {isAdmin && panel === "wallets" && (wallets.data?.length ?? 0) > 0 && (
+        <div className="mb-4 border border-ink-700 rounded-lg p-4 bg-ink-900 shadow-fb">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="font-sans font-semibold text-sand-50">Wallet labels</h3>
+              <p className="text-sm text-sand-200 mt-1">
+                Rename display labels. Provider and MSISDN stay the same.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="text-sm text-sand-200 hover:text-sand-50 shrink-0"
+              onClick={() => setPanel(null)}
+            >
+              Close
+            </button>
+          </div>
           <ul className="mt-3 space-y-2">
             {(wallets.data ?? []).map((w) => (
-              <WalletRenameRow
-                key={w.id}
-                wallet={w}
-                token={token!}
-                onToast={push}
-              />
+              <WalletRenameRow key={w.id} wallet={w} token={token!} onToast={push} />
             ))}
           </ul>
         </div>
@@ -337,9 +424,9 @@ export default function DevicesPage() {
 
       {isLoading && !data && <p className="text-sand-200">Loading…</p>}
 
-      {empty && (
-        <div className="border border-ink-700 rounded-lg p-6 bg-ink-900 text-center font-sans">
-          <p className="text-sand-50 font-semibold">No phones registered</p>
+      {empty && panel !== "register" && (
+        <div className="border border-ink-700 rounded-lg p-8 bg-ink-900 text-center font-sans">
+          <p className="text-sand-50 font-semibold text-lg">No phones registered</p>
           {isAdmin ? (
             <>
               <p className="mt-1 text-sm text-sand-200">
@@ -347,7 +434,7 @@ export default function DevicesPage() {
               </p>
               <button
                 type="button"
-                onClick={scrollToRegister}
+                onClick={openRegister}
                 className="mt-4 rounded-md bg-veld-600 hover:bg-veld-500 text-white px-4 py-2 text-sm font-semibold"
               >
                 Register a phone
@@ -361,7 +448,7 @@ export default function DevicesPage() {
         </div>
       )}
 
-      <div className="grid lg:grid-cols-2 gap-4">
+      <div className="space-y-3">
         {devices.map((d) => (
           <DeviceCard
             key={d.id}
@@ -484,6 +571,30 @@ function WalletRenameRow({
   );
 }
 
+function StatusChip({
+  tone,
+  children,
+}: {
+  tone: "ok" | "warn" | "bad" | "neutral";
+  children: ReactNode;
+}) {
+  const cls =
+    tone === "ok"
+      ? "bg-veld-600/10 text-veld-700 border-veld-600/25"
+      : tone === "warn"
+        ? "bg-amber-500/10 text-amber-800 border-amber-500/30"
+        : tone === "bad"
+          ? "bg-clay-600/10 text-clay-500 border-clay-500/30"
+          : "bg-ink-950 text-sand-200 border-ink-800";
+  return (
+    <span
+      className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px] font-sans font-medium ${cls}`}
+    >
+      {children}
+    </span>
+  );
+}
+
 function DeviceCard({
   device: d,
   isAdmin,
@@ -519,6 +630,7 @@ function DeviceCard({
     notes: d.notes ?? "",
   });
   const [rebindWalletId, setRebindWalletId] = useState("");
+  const [showDanger, setShowDanger] = useState(false);
 
   const activity = useQuery({
     queryKey: ["device-activity", d.id],
@@ -633,349 +745,474 @@ function DeviceCard({
     (w) => w.id === d.walletNumberId || !w.device || unboundWallets.some((u) => u.id === w.id)
   );
 
+  const pendingCmds = [
+    d.syncRequested ? "sync" : null,
+    d.wipeRequested ? "wipe" : null,
+    d.pingRequested ? "ping" : null,
+  ].filter(Boolean) as string[];
+
+  const hasIssue =
+    !d.online ||
+    d.updateRequired ||
+    d.queueAlert ||
+    !!d.lastError ||
+    d.smsPermissionOk === false ||
+    pendingCmds.length > 0;
+
   return (
     <div
-      className={`border rounded-lg p-4 bg-ink-900 shadow-fb ${
+      className={`border rounded-lg bg-ink-900 shadow-fb overflow-hidden ${
         d.online ? "border-ink-700" : "border-clay-500/35"
       }`}
     >
-      <div className="flex items-center justify-between gap-2">
-        {renaming ? (
-          <form
-            className="flex-1 flex gap-1 min-w-0"
-            onSubmit={(e) => {
-              e.preventDefault();
-              const next = renameValue.trim();
-              if (!next || next === d.name) {
-                setRenaming(false);
-                return;
-              }
-              rename.mutate(next);
-            }}
-          >
-            <input
-              autoFocus
-              className="flex-1 min-w-0 rounded-md bg-ink-950 border border-ink-700 px-2 py-1 text-sm"
-              value={renameValue}
-              onChange={(e) => setRenameValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Escape") setRenaming(false);
-              }}
-            />
-            <button
-              type="submit"
-              disabled={rename.isPending}
-              className="rounded-md bg-veld-600 px-2 py-1 text-xs text-white font-semibold disabled:opacity-50"
+      {/* Compact identity row */}
+      <div className="p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            {renaming ? (
+              <form
+                className="flex gap-1 max-w-md"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const next = renameValue.trim();
+                  if (!next || next === d.name) {
+                    setRenaming(false);
+                    return;
+                  }
+                  rename.mutate(next);
+                }}
+              >
+                <input
+                  autoFocus
+                  className="flex-1 min-w-0 rounded-md bg-ink-950 border border-ink-700 px-2 py-1 text-sm"
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") setRenaming(false);
+                  }}
+                />
+                <button
+                  type="submit"
+                  disabled={rename.isPending}
+                  className="rounded-md bg-veld-600 px-2 py-1 text-xs text-white font-semibold disabled:opacity-50"
+                >
+                  Save
+                </button>
+                <button
+                  type="button"
+                  className="rounded-md border border-ink-700 px-2 py-1 text-xs hover:bg-ink-800"
+                  onClick={() => setRenaming(false)}
+                >
+                  Cancel
+                </button>
+              </form>
+            ) : (
+              <h3 className="font-sans font-semibold text-sand-50 truncate text-lg leading-tight">
+                {d.name}
+              </h3>
+            )}
+            <p className="mt-1 text-sm text-sand-200 font-sans truncate">
+              {d.walletNumber?.label ?? "—"}
+              {d.walletNumber?.provider ? ` · ${providerLabel(d.walletNumber.provider)}` : ""}
+              {d.walletNumber?.msisdn ? (
+                <span className="font-mono text-xs"> · {d.walletNumber.msisdn}</span>
+              ) : null}
+            </p>
+            {(d.siteLabel || d.holderName) && (
+              <p className="mt-0.5 text-xs text-sand-200/80 font-sans truncate">
+                {[d.siteLabel, d.holderName].filter(Boolean).join(" · ")}
+              </p>
+            )}
+          </div>
+          <div className="shrink-0 text-right">
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-sans font-semibold ${
+                d.online
+                  ? "bg-veld-600/10 text-veld-700"
+                  : "bg-clay-600/10 text-clay-500"
+              }`}
             >
-              Save
-            </button>
-          </form>
-        ) : (
-          <h3 className="font-sans font-semibold text-sand-50 truncate">{d.name}</h3>
+              <span className={`h-1.5 w-1.5 rounded-full ${d.online ? "bg-veld-500" : "bg-clay-400"}`} />
+              {d.online ? "Online" : "Offline"}
+            </span>
+            <p className="mt-1.5 text-[11px] font-mono text-sand-200" title={fmtWhen(d.lastSeenAt)}>
+              Seen {fmtRelative(d.lastSeenAt)}
+            </p>
+          </div>
+        </div>
+
+        {hasIssue && (
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {d.updateRequired && <StatusChip tone="warn">Update required</StatusChip>}
+            {(d.queueAlert || d.pendingSmsCount > 0) && (
+              <StatusChip tone={d.queueAlert ? "bad" : "neutral"}>
+                Queue {d.pendingSmsCount}
+              </StatusChip>
+            )}
+            {d.smsPermissionOk === false && <StatusChip tone="bad">SMS permission missing</StatusChip>}
+            {pendingCmds.length > 0 && (
+              <StatusChip tone="neutral">Pending: {pendingCmds.join(", ")}</StatusChip>
+            )}
+            {d.lastError && (
+              <StatusChip tone="bad">
+                Error · {fmtRelative(d.lastErrorAt)}
+              </StatusChip>
+            )}
+          </div>
         )}
-        <span
-          className={`inline-flex items-center gap-1.5 text-xs font-mono shrink-0 ${
-            d.online ? "text-veld-400" : "text-clay-400"
-          }`}
-        >
-          <span className={`h-2 w-2 rounded-full ${d.online ? "bg-veld-400" : "bg-clay-400"}`} />
-          {d.online ? "ONLINE" : "OFFLINE"}
-        </span>
-      </div>
+        {d.lastError && (
+          <p className="mt-2 text-xs text-clay-400 font-sans break-words line-clamp-2" title={d.lastError}>
+            {d.lastError}
+          </p>
+        )}
 
-      {(d.siteLabel || d.holderName) && (
-        <p className="mt-1 text-xs text-sand-200 font-sans">
-          {[d.siteLabel, d.holderName].filter(Boolean).join(" · ")}
-        </p>
-      )}
-
-      <p className="mt-2 text-sm text-sand-200 font-sans">
-        {d.walletNumber?.label} ·{" "}
-        {d.walletNumber?.provider ? providerLabel(d.walletNumber.provider) : "—"}
-      </p>
-      <p className="font-mono text-xs text-sand-200 mt-1">
-        {d.walletNumber?.msisdn}
-        {d.simMsisdn ? ` · SIM ${d.simMsisdn}` : ""}
-      </p>
-
-      <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] font-mono text-sand-200">
-        <div>App: {d.appVersionName ? `v${d.appVersionName}` : "—"}</div>
-        <div>Queue: {d.pendingSmsCount}</div>
-        <div>Last seen: {fmtWhen(d.lastSeenAt)}</div>
-        <div>Last sync: {fmtWhen(d.lastSyncAt)}</div>
-        <div>SMS perm: {d.smsPermissionOk == null ? "—" : d.smsPermissionOk ? "OK" : "missing"}</div>
-        <div>Last pong: {fmtWhen(d.lastPongAt)}</div>
-      </div>
-
-      {d.updateRequired && (
-        <p className="mt-2 text-xs text-amber-200 font-sans font-semibold">Update required</p>
-      )}
-      {d.lastError && (
-        <p className="mt-2 text-xs text-clay-400 font-sans break-words">
-          Error ({fmtWhen(d.lastErrorAt)}): {d.lastError}
-        </p>
-      )}
-      {(d.syncRequested || d.wipeRequested || d.pingRequested) && (
-        <p className="mt-2 text-xs text-sand-200 font-sans">
-          Pending:{" "}
-          {[
-            d.syncRequested ? "force sync" : null,
-            d.wipeRequested ? "wipe" : null,
-            d.pingRequested ? "ping" : null,
-          ]
-            .filter(Boolean)
-            .join(", ")}
-        </p>
-      )}
-
-      <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-xs font-sans">
-        <Link to={feedLink(d.walletNumberId)} className="text-veld-400 hover:underline">
-          Live feed
-        </Link>
-        <Link to={feedLink(d.walletNumberId, "PENDING")} className="text-clay-400 hover:underline">
-          Pending deposits
-        </Link>
-        <button type="button" className="text-sand-200 hover:underline" onClick={onToggleExpand}>
-          {expanded ? "Hide details" : "Activity & audit"}
-        </button>
+        {/* Primary actions — only everyday ops */}
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          {isAdmin && (
+            <>
+              <button
+                type="button"
+                disabled={forceSync.isPending}
+                className="rounded-md bg-veld-600 hover:bg-veld-500 text-white px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
+                onClick={() => forceSync.mutate()}
+              >
+                {forceSync.isPending ? "Queuing…" : "Force sync"}
+              </button>
+              <button
+                type="button"
+                disabled={ping.isPending}
+                className="rounded-md border border-ink-700 px-3 py-1.5 text-xs font-sans hover:bg-ink-800 disabled:opacity-50"
+                onClick={() => ping.mutate()}
+              >
+                Ping
+              </button>
+              {d.hasPendingProvision && (
+                <button
+                  type="button"
+                  disabled={reshow.isPending}
+                  className="rounded-md border border-ink-700 px-3 py-1.5 text-xs font-sans hover:bg-ink-800 disabled:opacity-50"
+                  onClick={() => reshow.mutate()}
+                >
+                  Show QR
+                </button>
+              )}
+            </>
+          )}
+          <Link
+            to={feedLink(d.walletNumberId)}
+            className="rounded-md border border-ink-700 px-3 py-1.5 text-xs font-sans hover:bg-ink-800 text-sand-50"
+          >
+            Live feed
+          </Link>
+          <Link
+            to={feedLink(d.walletNumberId, "PENDING")}
+            className="rounded-md border border-ink-700 px-3 py-1.5 text-xs font-sans hover:bg-ink-800 text-sand-50"
+          >
+            Pending
+          </Link>
+          <button
+            type="button"
+            className={`ml-auto rounded-md px-3 py-1.5 text-xs font-sans ${
+              expanded
+                ? "bg-ink-800 text-sand-50"
+                : "border border-ink-700 text-sand-200 hover:bg-ink-800 hover:text-sand-50"
+            }`}
+            onClick={onToggleExpand}
+            aria-expanded={expanded}
+          >
+            {expanded ? "Hide details" : "Details"}
+          </button>
+        </div>
       </div>
 
       {expanded && (
-        <div className="mt-3 pt-3 border-t border-ink-700 space-y-3 text-xs font-sans">
+        <div className="border-t border-ink-700 bg-ink-950/40 px-4 py-4 space-y-5">
+          {/* Health metrics — only in details */}
           <div>
-            <p className="text-sand-50 font-semibold mb-1">Recent SMS / deposits</p>
-            {(activity.data ?? []).length === 0 && !activity.isLoading && (
-              <p className="text-sand-200">No captures yet for this wallet.</p>
-            )}
-            <ul className="space-y-1.5">
-              {(activity.data ?? []).map((a: CaptureDeviceActivityItem) => (
-                <li key={a.id} className="rounded-md bg-ink-950/80 border border-ink-800 px-2 py-1.5">
-                  <div className="flex justify-between gap-2">
-                    <span className="font-mono text-sand-50">{formatNad(a.amount)}</span>
-                    <span className="text-sand-200">{a.matchStatus}</span>
-                  </div>
-                  <p className="text-sand-200 mt-0.5 truncate">
-                    {(a.senderName || a.senderMsisdn || "—") +
-                      (a.reference ? ` · ${a.reference}` : "")}
-                  </p>
-                  <p className="text-sand-200/80 mt-0.5 line-clamp-2">{a.rawMessage}</p>
-                  <p className="text-sand-200/70 mt-0.5 font-mono">{fmtWhen(a.receivedAt)}</p>
-                </li>
-              ))}
-            </ul>
-          </div>
-          <div>
-            <div className="flex items-center justify-between gap-2 mb-1">
-              <p className="text-sand-50 font-semibold">Device audit</p>
-                <Link
-                to={`/audit?entityType=CaptureDevice&entityId=${encodeURIComponent(d.id)}`}
-                className="text-veld-400 hover:underline"
-              >
-                Full trail
-              </Link>
-            </div>
-            <ul className="space-y-1">
-              {(audit.data ?? []).map((log: AuditLogDto) => (
-                <li key={log.id} className="rounded-md bg-ink-950/80 border border-ink-800 px-2 py-1.5">
-                  <div className="flex justify-between gap-2">
-                    <span className="text-sand-50">{auditActionLabel(log.action)}</span>
-                    <span className="font-mono shrink-0 text-sand-200">{fmtWhen(log.createdAt)}</span>
-                  </div>
-                  <p className="text-sand-200 mt-0.5">
-                    {auditActorLabel(log)}
-                    <span className="text-sand-200/50 font-mono uppercase text-[10px] ml-1.5">
-                      {log.actorType}
-                    </span>
-                  </p>
-                </li>
-              ))}
-              {(audit.data ?? []).length === 0 && !audit.isLoading && (
-                <li className="text-sand-200">No device events yet.</li>
+            <p className="text-xs font-semibold uppercase tracking-wide text-sand-200 mb-2">Health</p>
+            <dl className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs font-sans">
+              <div className="rounded-md border border-ink-800 bg-ink-900 px-2.5 py-2">
+                <dt className="text-sand-200">App</dt>
+                <dd className="font-mono text-sand-50 mt-0.5">
+                  {d.appVersionName ? `v${d.appVersionName}` : "—"}
+                </dd>
+              </div>
+              <div className="rounded-md border border-ink-800 bg-ink-900 px-2.5 py-2">
+                <dt className="text-sand-200">Queue</dt>
+                <dd className="font-mono text-sand-50 mt-0.5">{d.pendingSmsCount}</dd>
+              </div>
+              <div className="rounded-md border border-ink-800 bg-ink-900 px-2.5 py-2">
+                <dt className="text-sand-200">SMS permission</dt>
+                <dd className="font-mono text-sand-50 mt-0.5">
+                  {d.smsPermissionOk == null ? "—" : d.smsPermissionOk ? "OK" : "missing"}
+                </dd>
+              </div>
+              <div className="rounded-md border border-ink-800 bg-ink-900 px-2.5 py-2">
+                <dt className="text-sand-200">Last seen</dt>
+                <dd className="font-mono text-sand-50 mt-0.5 text-[11px]">{fmtWhen(d.lastSeenAt)}</dd>
+              </div>
+              <div className="rounded-md border border-ink-800 bg-ink-900 px-2.5 py-2">
+                <dt className="text-sand-200">Last sync</dt>
+                <dd className="font-mono text-sand-50 mt-0.5 text-[11px]">{fmtWhen(d.lastSyncAt)}</dd>
+              </div>
+              <div className="rounded-md border border-ink-800 bg-ink-900 px-2.5 py-2">
+                <dt className="text-sand-200">Last pong</dt>
+                <dd className="font-mono text-sand-50 mt-0.5 text-[11px]">{fmtWhen(d.lastPongAt)}</dd>
+              </div>
+              {d.simMsisdn && (
+                <div className="rounded-md border border-ink-800 bg-ink-900 px-2.5 py-2 sm:col-span-3">
+                  <dt className="text-sand-200">SIM MSISDN</dt>
+                  <dd className="font-mono text-sand-50 mt-0.5">{d.simMsisdn}</dd>
+                </div>
               )}
-            </ul>
-          </div>
-        </div>
-      )}
-
-      {isAdmin && !renaming && (
-        <div className="mt-3 pt-3 border-t border-ink-700 space-y-2">
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              className="rounded-md border border-ink-700 px-2 py-1 text-xs hover:bg-ink-800"
-              onClick={() => {
-                setRenaming(true);
-                setRenameValue(d.name);
-              }}
-            >
-              Rename
-            </button>
-            <button
-              type="button"
-              disabled={!d.hasPendingProvision || reshow.isPending}
-              className="rounded-md border border-ink-700 px-2 py-1 text-xs hover:bg-ink-800 disabled:opacity-40"
-              onClick={() => reshow.mutate()}
-              title={
-                d.hasPendingProvision
-                  ? "Re-show pending provision QR"
-                  : "No pending key — rotate to issue a new one"
-              }
-            >
-              Show QR
-            </button>
-            <button
-              type="button"
-              disabled={forceSync.isPending}
-              className="rounded-md border border-ink-700 px-2 py-1 text-xs hover:bg-ink-800 disabled:opacity-50"
-              onClick={() => forceSync.mutate()}
-            >
-              Force sync
-            </button>
-            <button
-              type="button"
-              disabled={ping.isPending}
-              className="rounded-md border border-ink-700 px-2 py-1 text-xs hover:bg-ink-800 disabled:opacity-50"
-              onClick={() => ping.mutate()}
-            >
-              Test ping
-            </button>
-            <button
-              type="button"
-              className="rounded-md border border-ink-700 px-2 py-1 text-xs hover:bg-ink-800"
-              onClick={() => {
-                setEditingNotes((v) => !v);
-                setNotesDraft({
-                  siteLabel: d.siteLabel ?? "",
-                  holderName: d.holderName ?? "",
-                  simMsisdn: d.simMsisdn ?? "",
-                  notes: d.notes ?? "",
-                });
-              }}
-            >
-              Notes
-            </button>
-            <button
-              type="button"
-              disabled={rotate.isPending}
-              className="rounded-md border border-ink-700 px-2 py-1 text-xs hover:bg-ink-800 disabled:opacity-50"
-              onClick={() => {
-                if (
-                  !window.confirm(
-                    `Rotate API key for “${d.name}”? The phone will go offline until it scans the new QR.`
-                  )
-                ) {
-                  return;
-                }
-                rotate.mutate();
-              }}
-            >
-              Rotate key
-            </button>
-            <button
-              type="button"
-              disabled={wipe.isPending}
-              className="rounded-md border border-clay-500/40 px-2 py-1 text-xs text-clay-400 hover:bg-clay-600/15 disabled:opacity-50"
-              onClick={() => {
-                if (
-                  !window.confirm(
-                    `Remote wipe “${d.name}”? The phone will clear its sealed key on next heartbeat. A new QR will be available after wipe is delivered.`
-                  )
-                ) {
-                  return;
-                }
-                wipe.mutate();
-              }}
-            >
-              Wipe
-            </button>
-            <button
-              type="button"
-              disabled={revoke.isPending}
-              className="rounded-md border border-clay-500/40 px-2 py-1 text-xs text-clay-400 hover:bg-clay-600/15 disabled:opacity-50"
-              onClick={() => {
-                if (
-                  !window.confirm(
-                    `Revoke “${d.name}”? This frees the wallet binding. The phone can no longer capture SMS.`
-                  )
-                ) {
-                  return;
-                }
-                revoke.mutate();
-              }}
-            >
-              Revoke
-            </button>
+            </dl>
           </div>
 
-          {editingNotes && (
-            <div className="grid sm:grid-cols-2 gap-2 pt-1">
-              <input
-                className="rounded-md bg-ink-950 border border-ink-700 px-2 py-1 text-xs"
-                placeholder="Site label"
-                value={notesDraft.siteLabel}
-                onChange={(e) => setNotesDraft((s) => ({ ...s, siteLabel: e.target.value }))}
-              />
-              <input
-                className="rounded-md bg-ink-950 border border-ink-700 px-2 py-1 text-xs"
-                placeholder="Holder name"
-                value={notesDraft.holderName}
-                onChange={(e) => setNotesDraft((s) => ({ ...s, holderName: e.target.value }))}
-              />
-              <input
-                className="rounded-md bg-ink-950 border border-ink-700 px-2 py-1 text-xs"
-                placeholder="SIM MSISDN"
-                value={notesDraft.simMsisdn}
-                onChange={(e) => setNotesDraft((s) => ({ ...s, simMsisdn: e.target.value }))}
-              />
-              <textarea
-                className="sm:col-span-2 rounded-md bg-ink-950 border border-ink-700 px-2 py-1 text-xs min-h-[56px]"
-                placeholder="Notes"
-                value={notesDraft.notes}
-                onChange={(e) => setNotesDraft((s) => ({ ...s, notes: e.target.value }))}
-              />
-              <button
-                type="button"
-                disabled={saveNotes.isPending}
-                className="rounded-md bg-veld-600 px-2 py-1 text-xs text-white font-semibold disabled:opacity-50"
-                onClick={() => saveNotes.mutate()}
-              >
-                Save notes
-              </button>
+          <div className="grid lg:grid-cols-2 gap-5">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-sand-200 mb-2">
+                Recent SMS / deposits
+              </p>
+              {(activity.data ?? []).length === 0 && !activity.isLoading && (
+                <p className="text-sm text-sand-200">No captures yet for this wallet.</p>
+              )}
+              <ul className="space-y-1.5">
+                {(activity.data ?? []).map((a: CaptureDeviceActivityItem) => (
+                  <li
+                    key={a.id}
+                    className="rounded-md bg-ink-900 border border-ink-800 px-2.5 py-2 text-xs"
+                  >
+                    <div className="flex justify-between gap-2">
+                      <span className="font-mono text-sand-50">{formatNad(a.amount)}</span>
+                      <span className="text-sand-200">{a.matchStatus}</span>
+                    </div>
+                    <p className="text-sand-200 mt-0.5 truncate">
+                      {(a.senderName || a.senderMsisdn || "—") +
+                        (a.reference ? ` · ${a.reference}` : "")}
+                    </p>
+                    <p className="text-sand-200/70 mt-0.5 font-mono">{fmtWhen(a.receivedAt)}</p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-sand-200">
+                  Device audit
+                </p>
+                <Link
+                  to={`/audit?entityType=CaptureDevice&entityId=${encodeURIComponent(d.id)}`}
+                  className="text-xs text-veld-400 hover:underline"
+                >
+                  Full trail
+                </Link>
+              </div>
+              <ul className="space-y-1.5">
+                {(audit.data ?? []).map((log: AuditLogDto) => (
+                  <li
+                    key={log.id}
+                    className="rounded-md bg-ink-900 border border-ink-800 px-2.5 py-2 text-xs"
+                  >
+                    <div className="flex justify-between gap-2">
+                      <span className="text-sand-50">{auditActionLabel(log.action)}</span>
+                      <span className="font-mono shrink-0 text-sand-200">{fmtWhen(log.createdAt)}</span>
+                    </div>
+                    <p className="text-sand-200 mt-0.5">
+                      {auditActorLabel(log)}
+                      <span className="text-sand-200/50 font-mono uppercase text-[10px] ml-1.5">
+                        {log.actorType}
+                      </span>
+                    </p>
+                  </li>
+                ))}
+                {(audit.data ?? []).length === 0 && !audit.isLoading && (
+                  <li className="text-sm text-sand-200">No device events yet.</li>
+                )}
+              </ul>
+            </div>
+          </div>
+
+          {isAdmin && (
+            <div className="border-t border-ink-800 pt-4 space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-sand-200">Manage</p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className="rounded-md border border-ink-700 px-2.5 py-1.5 text-xs hover:bg-ink-800"
+                  onClick={() => {
+                    setRenaming(true);
+                    setRenameValue(d.name);
+                  }}
+                >
+                  Rename
+                </button>
+                <button
+                  type="button"
+                  className="rounded-md border border-ink-700 px-2.5 py-1.5 text-xs hover:bg-ink-800"
+                  onClick={() => {
+                    setEditingNotes((v) => !v);
+                    setNotesDraft({
+                      siteLabel: d.siteLabel ?? "",
+                      holderName: d.holderName ?? "",
+                      simMsisdn: d.simMsisdn ?? "",
+                      notes: d.notes ?? "",
+                    });
+                  }}
+                >
+                  {editingNotes ? "Close notes" : "Edit notes"}
+                </button>
+                {!d.hasPendingProvision && (
+                  <button
+                    type="button"
+                    disabled={reshow.isPending}
+                    title="No pending key — rotate to issue a new one"
+                    className="rounded-md border border-ink-700 px-2.5 py-1.5 text-xs hover:bg-ink-800 disabled:opacity-40"
+                    onClick={() => reshow.mutate()}
+                  >
+                    Show QR
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className={`rounded-md border px-2.5 py-1.5 text-xs hover:bg-ink-800 ${
+                    showDanger
+                      ? "border-clay-500/40 text-clay-400"
+                      : "border-ink-700"
+                  }`}
+                  onClick={() => setShowDanger((v) => !v)}
+                >
+                  {showDanger ? "Hide advanced" : "Advanced…"}
+                </button>
+              </div>
+
+              {editingNotes && (
+                <div className="grid sm:grid-cols-2 gap-2">
+                  <input
+                    className="rounded-md bg-ink-900 border border-ink-700 px-2 py-1.5 text-xs"
+                    placeholder="Site label"
+                    value={notesDraft.siteLabel}
+                    onChange={(e) => setNotesDraft((s) => ({ ...s, siteLabel: e.target.value }))}
+                  />
+                  <input
+                    className="rounded-md bg-ink-900 border border-ink-700 px-2 py-1.5 text-xs"
+                    placeholder="Holder name"
+                    value={notesDraft.holderName}
+                    onChange={(e) => setNotesDraft((s) => ({ ...s, holderName: e.target.value }))}
+                  />
+                  <input
+                    className="rounded-md bg-ink-900 border border-ink-700 px-2 py-1.5 text-xs"
+                    placeholder="SIM MSISDN"
+                    value={notesDraft.simMsisdn}
+                    onChange={(e) => setNotesDraft((s) => ({ ...s, simMsisdn: e.target.value }))}
+                  />
+                  <textarea
+                    className="sm:col-span-2 rounded-md bg-ink-900 border border-ink-700 px-2 py-1.5 text-xs min-h-[56px]"
+                    placeholder="Notes"
+                    value={notesDraft.notes}
+                    onChange={(e) => setNotesDraft((s) => ({ ...s, notes: e.target.value }))}
+                  />
+                  <button
+                    type="button"
+                    disabled={saveNotes.isPending}
+                    className="rounded-md bg-veld-600 px-2.5 py-1.5 text-xs text-white font-semibold disabled:opacity-50"
+                    onClick={() => saveNotes.mutate()}
+                  >
+                    Save notes
+                  </button>
+                </div>
+              )}
+
+              {showDanger && (
+                <div className="rounded-md border border-clay-500/25 bg-clay-600/5 p-3 space-y-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      className="rounded-md bg-ink-900 border border-ink-700 px-2 py-1.5 text-xs min-w-[10rem]"
+                      value={rebindWalletId}
+                      onChange={(e) => setRebindWalletId(e.target.value)}
+                    >
+                      <option value="">Rebind wallet…</option>
+                      {rebindOptions.map((w) => (
+                        <option key={w.id} value={w.id} disabled={w.id === d.walletNumberId}>
+                          {w.label} ({w.msisdn})
+                          {w.id === d.walletNumberId ? " — current" : ""}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      disabled={!rebindWalletId || rebind.isPending}
+                      className="rounded-md border border-ink-700 px-2.5 py-1.5 text-xs hover:bg-ink-800 disabled:opacity-40"
+                      onClick={() => {
+                        if (
+                          !window.confirm(
+                            `Move “${d.name}” to another wallet? Deposits will bind to the new wallet going forward.`
+                          )
+                        ) {
+                          return;
+                        }
+                        rebind.mutate(rebindWalletId);
+                      }}
+                    >
+                      Rebind
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      disabled={rotate.isPending}
+                      className="rounded-md border border-ink-700 px-2.5 py-1.5 text-xs hover:bg-ink-800 disabled:opacity-50"
+                      onClick={() => {
+                        if (
+                          !window.confirm(
+                            `Rotate API key for “${d.name}”? The phone will go offline until it scans the new QR.`
+                          )
+                        ) {
+                          return;
+                        }
+                        rotate.mutate();
+                      }}
+                    >
+                      Rotate key
+                    </button>
+                    <button
+                      type="button"
+                      disabled={wipe.isPending}
+                      className="rounded-md border border-clay-500/40 px-2.5 py-1.5 text-xs text-clay-400 hover:bg-clay-600/15 disabled:opacity-50"
+                      onClick={() => {
+                        if (
+                          !window.confirm(
+                            `Remote wipe “${d.name}”? The phone will clear its sealed key on next heartbeat. A new QR will be available after wipe is delivered.`
+                          )
+                        ) {
+                          return;
+                        }
+                        wipe.mutate();
+                      }}
+                    >
+                      Wipe
+                    </button>
+                    <button
+                      type="button"
+                      disabled={revoke.isPending}
+                      className="rounded-md border border-clay-500/40 px-2.5 py-1.5 text-xs text-clay-400 hover:bg-clay-600/15 disabled:opacity-50"
+                      onClick={() => {
+                        if (
+                          !window.confirm(
+                            `Revoke “${d.name}”? This frees the wallet binding. The phone can no longer capture SMS.`
+                          )
+                        ) {
+                          return;
+                        }
+                        revoke.mutate();
+                      }}
+                    >
+                      Revoke
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
-
-          <div className="flex flex-wrap items-center gap-2 pt-1">
-            <select
-              className="rounded-md bg-ink-950 border border-ink-700 px-2 py-1 text-xs min-w-[10rem]"
-              value={rebindWalletId}
-              onChange={(e) => setRebindWalletId(e.target.value)}
-            >
-              <option value="">Rebind wallet…</option>
-              {rebindOptions.map((w) => (
-                <option key={w.id} value={w.id} disabled={w.id === d.walletNumberId}>
-                  {w.label} ({w.msisdn})
-                  {w.id === d.walletNumberId ? " — current" : ""}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              disabled={!rebindWalletId || rebind.isPending}
-              className="rounded-md border border-ink-700 px-2 py-1 text-xs hover:bg-ink-800 disabled:opacity-40"
-              onClick={() => {
-                if (
-                  !window.confirm(
-                    `Move “${d.name}” to another wallet? Deposits will bind to the new wallet going forward.`
-                  )
-                ) {
-                  return;
-                }
-                rebind.mutate(rebindWalletId);
-              }}
-            >
-              Rebind
-            </button>
-          </div>
         </div>
       )}
     </div>
