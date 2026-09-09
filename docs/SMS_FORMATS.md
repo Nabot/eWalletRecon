@@ -62,6 +62,19 @@ Bank WHK:  Byte-Able Investment CC/2015/04028 sent you an of NAD5000.00 O. REF:0
 | `REF:` | txn id e.g. `20260820-71391772` | cellphone e.g. `0813544045` |
 | Channel | WALLET | BANK |
 
+## Standard Bank → account credit (cellphone Ref)
+
+```
+Your Acc XX7600 has been credited with NAD 1,851.50. Ref: 0813544045. Available balance: NAD 5,034.73. 08/09/26 05:07:17. Queries? 92860
+```
+
+- Amount: credit line `NAD 1,851.50` (not available balance)
+- **Reference / sender MSISDN = cellphone** from `Ref:`
+- Timestamp: `dd/MM/yy HH:mm:ss`
+- Channel: **BANK** / provider: `BANK_STDBANK`
+- Phone sender IDs (sync filter): `StdBank`, `STDBANK`, `StandardBank`, `92860` — confirm actual handset “From” and update if different
+- Distinct from BlueVoucher (`Your BlueVoucher a/c…`)
+
 ## EWallet → FNB
 
 ```
@@ -81,6 +94,7 @@ FNB :) N T NABOT sent you N¤4500.00. Get cash at Cash Plus partner or Press PRO
 | PayPulse / BlueVoucher | `PAYPULSE` |
 | FNB eWallet | `362626` |
 | EasyWallet + Bank WHK transfer | `140295` |
+| Standard Bank transfer | `StdBank` / confirm on handset |
 | Pay2Cell | _not yet provided_ |
 
 ## Matching implications
@@ -90,4 +104,5 @@ FNB :) N T NABOT sent you N¤4500.00. Get cash at Cash Plus partner or Press PRO
 | BlueVoucher  | Yes (Reference#)    | `Reference#` MSISDN or optional `BET####`        |
 | EasyWallet   | No                  | SMS **`REF:`** txn id                            |
 | Bank WHK     | Yes (REF cellphone) | `REF:` cellphone → PstBet `/account` mobile      |
+| Standard Bank | Yes (Ref cellphone) | `Ref:` cellphone → PstBet `/account` mobile     |
 | FNB eWallet  | No                  | `BET####` if present, else manual                |

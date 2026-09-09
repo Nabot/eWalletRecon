@@ -30,7 +30,8 @@ export const paypulseParser: SmsParser = {
   senderIds: ["PAYPULSE", "PayPulse", "BlueVoucher"],
   parse(rawText: string): ParsedSms | null {
     const text = collapseWhitespace(rawText);
-    if (!/blue\s*voucher|pay\s*pulse|credited\s+with/i.test(text)) {
+    // Require BlueVoucher/PayPulse branding — "credited with" alone matches bank SMS
+    if (!/blue\s*voucher|pay\s*pulse/i.test(text)) {
       return null;
     }
     const amount = extractAmount(text);

@@ -1,6 +1,12 @@
 /** Shared types for e-wallet reconciliation (backend + web). */
 
-export type WalletProvider = "PAYPULSE" | "EASYWALLET" | "PAY2CELL" | "EWALLET" | "BANK_WHK";
+export type WalletProvider =
+  | "PAYPULSE"
+  | "EASYWALLET"
+  | "PAY2CELL"
+  | "EWALLET"
+  | "BANK_WHK"
+  | "BANK_STDBANK";
 
 export type DepositChannel = "WALLET" | "BANK";
 

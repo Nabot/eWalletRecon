@@ -3,6 +3,7 @@ import type { SmsParser, ParsedSms } from "./types";
 import { paypulseParser } from "./paypulse";
 import { easywalletParser } from "./easywallet";
 import { bankWhkParser } from "./bankWhk";
+import { bankStdbankParser } from "./bankStdbank";
 import { pay2cellParser } from "./pay2cell";
 import { ewalletParser } from "./ewallet";
 
@@ -10,6 +11,7 @@ const parsers: SmsParser[] = [
   paypulseParser,
   easywalletParser,
   bankWhkParser,
+  bankStdbankParser,
   pay2cellParser,
   ewalletParser,
 ];

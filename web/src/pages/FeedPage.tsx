@@ -525,7 +525,10 @@ export default function FeedPage({ channel }: Props) {
           >
             <option value="">All</option>
             {isBanks ? (
-              <option value="BANK_WHK">Bank WHK</option>
+              <>
+                <option value="BANK_WHK">Bank WHK</option>
+                <option value="BANK_STDBANK">Standard Bank</option>
+              </>
             ) : (
               <>
                 <option value="PAYPULSE">PayPulse</option>

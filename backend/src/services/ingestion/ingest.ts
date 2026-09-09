@@ -99,7 +99,7 @@ export async function ingestDeposit(input: NormalizedDepositInput): Promise<Inge
     data: {
       walletNumberId: input.walletNumberId,
       provider: input.provider,
-      channel: input.provider === "BANK_WHK" ? "BANK" : "WALLET",
+      channel: input.provider === "BANK_WHK" || input.provider === "BANK_STDBANK" ? "BANK" : "WALLET",
       amount: input.amount,
       currency: input.currency ?? "NAD",
       senderMsisdn: input.senderMsisdn ?? null,

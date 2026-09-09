@@ -13,6 +13,7 @@ enum WalletProvider {
   PAY2CELL
   EWALLET
   BANK_WHK
+  BANK_STDBANK
 }
 
 enum DepositChannel {

@@ -75,7 +75,7 @@ apiRouter.get("/deposits", async (req, res) => {
 
   if (
     provider &&
-    ["PAYPULSE", "EASYWALLET", "PAY2CELL", "EWALLET", "BANK_WHK"].includes(provider)
+    ["PAYPULSE", "EASYWALLET", "PAY2CELL", "EWALLET", "BANK_WHK", "BANK_STDBANK"].includes(provider)
   ) {
     where.provider = provider as Prisma.EnumWalletProviderFilter["equals"];
   }

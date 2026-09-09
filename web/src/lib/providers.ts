@@ -6,6 +6,7 @@ const PROVIDER_LABEL: Record<WalletProvider, string> = {
   PAY2CELL: "Pay2Cell",
   EWALLET: "FNB eWallet",
   BANK_WHK: "Bank WHK",
+  BANK_STDBANK: "Standard Bank",
 };
 
 export function providerLabel(provider: WalletProvider | string): string {

@@ -138,15 +138,27 @@ export function extractSenderName(text: string): string | null {
   return name;
 }
 
-/** Parse dates like 21/08/2026 16:32:12 (Africa/Windhoek local, stored as Date). */
+/** True when a REF looks like a Namibian / local mobile (not EasyWallet txn id). */
+export function isPhoneLikeRef(ref: string | null | undefined): boolean {
+  if (!ref?.trim()) return false;
+  // EasyWallet txn refs look like 20260820-71391772
+  if (/^\d{8}-\d+$/.test(ref.trim())) return false;
+  const n = normalizeMsisdn(ref);
+  if (!n) return false;
+  // Local 0xxxxxxxxx → 264… (11–12 digits) or raw long MSISDN
+  return n.startsWith("264") ? n.length >= 11 && n.length <= 12 : n.length >= 9 && n.length <= 15;
+}
+
+/** Parse dates like 21/08/2026 16:32:12 or 08/09/26 05:07:17 (Africa/Windhoek / CAT). */
 export function parseNamibianDateTime(text: string): Date | null {
   const m = text.match(
-    /\b(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\b/
+    /\b(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\b/
   );
   if (!m) return null;
   const day = Number(m[1]);
   const month = Number(m[2]);
-  const year = Number(m[3]);
+  let year = Number(m[3]);
+  if (year < 100) year += 2000;
   const hour = Number(m[4]);
   const minute = Number(m[5]);
   const second = Number(m[6] ?? "0");
